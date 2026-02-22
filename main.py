@@ -180,8 +180,11 @@ async def emp_import_csv(csv_file: UploadFile = File(...), current_user: dict = 
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/emp", status_code=303)
     content = await csv_file.read()
-    # Decode ignoring header row (assuming typical CSV template usage)
-    text = content.decode('utf-8-sig').strip()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
     if '\n' in text:
         text = text.split('\n', 1)[1] # skip header
     success_count, errors = batch_import_text(text)
@@ -245,7 +248,11 @@ async def vendor_import_csv(csv_file: UploadFile = File(...), current_user: dict
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/vendor", status_code=303)
     content = await csv_file.read()
-    text = content.decode('utf-8-sig').strip()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
     if '\n' in text:
         text = text.split('\n', 1)[1] # skip header
     success_count, errors = batch_import_vendor_text(text)
@@ -311,7 +318,11 @@ async def cli_import_csv(csv_file: UploadFile = File(...), current_user: dict = 
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/cli", status_code=303)
     content = await csv_file.read()
-    text = content.decode('utf-8-sig').strip()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
     if '\n' in text:
         text = text.split('\n', 1)[1] # skip header
     success_count, errors = batch_import_cli_text(text)
