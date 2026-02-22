@@ -99,7 +99,8 @@ def init_db():
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (quote_id) REFERENCES uni_quote(quote_id),
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id),
-        FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id)
+        FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id),
+        UNIQUE(quote_id)
     );
 
     CREATE TABLE IF NOT EXISTS uni_order (

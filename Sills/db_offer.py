@@ -3,13 +3,15 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date=""):
+def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id=""):
     offset = (page - 1) * page_size
     
     base_query = """
     FROM uni_offer o
     LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
     LEFT JOIN uni_emp e ON o.emp_id = e.emp_id
+    LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+    LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
     WHERE (o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ?)
     """
     params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
@@ -20,9 +22,19 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if end_date:
         base_query += " AND o.offer_date <= ?"
         params.append(end_date)
+    if cli_id:
+        base_query += " AND q.cli_id = ?"
+        params.append(cli_id)
         
     query = f"""
-    SELECT o.*, v.vendor_name, e.emp_name
+    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name,
+           ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' || 
+            'Brand: ' || COALESCE(o.quoted_brand, '') || ' | ' || 
+            'Amount(pcs): ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' | ' || 
+            'Price: ' || COALESCE(CAST(o.offer_price_rmb AS TEXT), '') || ' | ' || 
+            'DC: ' || COALESCE(o.date_code, '') || ' | ' || 
+            'LeadTime: ' || COALESCE(o.delivery_date, '') || ' | ' || 
+            'Remark: ' || COALESCE(o.remark, '')) as combined_offer_info
     {base_query}
     ORDER BY o.created_at DESC
     LIMIT ? OFFSET ?
@@ -45,6 +57,13 @@ def add_offer(data, emp_id):
         hex_str = str(uuid.uuid4().hex)
         offer_id = "O" + datetime.now().strftime("%Y%m%d%H%M%S") + hex_str[:4]
         offer_date = datetime.now().strftime("%Y-%m-%d")
+
+        quote_id = data.get('quote_id')
+        if quote_id:
+            with get_db_connection() as conn:
+                existing = conn.execute("SELECT offer_id FROM uni_offer WHERE quote_id = ?", (quote_id,)).fetchone()
+                if existing:
+                    return False, f"该需求编号 {quote_id} 已存在报价记录 {existing['offer_id']}，不可重复创建"
         
         sql = """
         INSERT INTO uni_offer (
@@ -53,6 +72,21 @@ def add_offer(data, emp_id):
             vendor_id, date_code, delivery_date, emp_id, offer_statement, remark
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+        inquiry_qty = int(data.get('inquiry_qty', 0))
+        actual_qty = data.get('actual_qty')
+        quoted_qty = data.get('quoted_qty')
+        
+        # Default actual/quoted qty to inquiry_qty if not provided or 0
+        if not actual_qty or int(actual_qty) == 0:
+            actual_qty = inquiry_qty
+        else:
+            actual_qty = int(actual_qty)
+
+        if not quoted_qty or int(quoted_qty) == 0:
+            quoted_qty = inquiry_qty
+        else:
+            quoted_qty = int(quoted_qty)
+
         params = (
             offer_id,
             offer_date,
@@ -61,9 +95,9 @@ def add_offer(data, emp_id):
             data.get('quoted_mpn', ''),
             data.get('inquiry_brand', ''),
             data.get('quoted_brand', ''),
-            data.get('inquiry_qty', 0),
-            data.get('actual_qty', 0),
-            data.get('quoted_qty', 0),
+            inquiry_qty,
+            actual_qty,
+            quoted_qty,
             data.get('cost_price_rmb', 0.0),
             data.get('offer_price_rmb', 0.0),
             data.get('platform', ''),
@@ -139,8 +173,8 @@ def batch_import_offer_text(text, emp_id):
                 "inquiry_brand": parts[3] if len(parts) > 3 else "",
                 "quoted_brand": parts[4] if len(parts) > 4 else "",
                 "inquiry_qty": int(parts[5]) if len(parts) > 5 and parts[5] else 0,
-                "actual_qty": int(parts[6]) if len(parts) > 6 and parts[6] else 0,
-                "quoted_qty": int(parts[7]) if len(parts) > 7 and parts[7] else 0,
+                "actual_qty": int(parts[6]) if len(parts) > 6 and parts[6] else None,
+                "quoted_qty": int(parts[7]) if len(parts) > 7 and parts[7] else None,
                 "cost_price_rmb": float(parts[8]) if len(parts) > 8 and parts[8] else 0.0,
                 "offer_price_rmb": float(parts[9]) if len(parts) > 9 and parts[9] else 0.0,
                 "platform": parts[10] if len(parts) > 10 else "",

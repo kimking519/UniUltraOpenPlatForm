@@ -9,6 +9,8 @@
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
+        <button class="btn btn-primary" onclick="exportSelectedToOfferCsv()"
+            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为报价表.csv</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
             style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
         <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增需求</button>
@@ -29,6 +31,13 @@
             <input type="date" name="end_date" value="{{ end_date }}"
                 style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;" title="结束日期">
         </div>
+        <select name="cli_id"
+            style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; min-width: 150px;">
+            <option value="">全部客户</option>
+            {% for cli in cli_list %}
+            <option value="{{ cli.cli_id }}" {% if cli.cli_id==cli_id %}selected{% endif %}>{{ cli.cli_name }}</option>
+            {% endfor %}
+        </select>
         <select name="page_size" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
             <option value="20" {% if page_size==20 %}selected{% endif %}>20条/页</option>
             <option value="50" {% if page_size==50 %}selected{% endif %}>50条/页</option>
@@ -368,6 +377,40 @@
                     if (data.success) window.location.reload();
                     else alert('批量删除失败: ' + data.message);
                 });
+        }
+    }
+    async function exportSelectedToOfferCsv() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要导出的需求记录');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/quote/export_offer_csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // The backend returned text with BOM prepended
+                const blob = new Blob([data.csv_content], { type: 'text/csv;charset=utf-8-sig;' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `offer_template_export_${new Date().getTime()}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('导出失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
         }
     }
 </script>

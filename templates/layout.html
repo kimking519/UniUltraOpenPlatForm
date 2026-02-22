@@ -35,7 +35,37 @@
         <main class="container fade-in">
             {% block content %}{% endblock %}
         </main>
+        </main>
     </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            let alertMsg = [];
+
+            if (params.has('import_success')) {
+                const count = parseInt(params.get('import_success'), 10);
+                if (count > 0) alertMsg.push(`批量导入成功: ${count} 条`);
+            }
+            if (params.has('errors')) {
+                const count = parseInt(params.get('errors'), 10);
+                if (count > 0) alertMsg.push(`导入失败: ${count} 条`);
+            }
+            if (params.has('msg')) {
+                const prefix = params.get('success') === '1' ? '操作成功: ' : '操作失败: ';
+                alertMsg.push(prefix + params.get('msg'));
+            }
+
+            if (alertMsg.length > 0) {
+                alert(alertMsg.join('\n'));
+                // Clean the URL of these parameters so a refresh doesn't trigger the alert again
+                const newUrl = window.location.pathname +
+                    window.location.search.replace(/[?&](import_success|errors|msg|success)=[^&]+/g, '')
+                        .replace(/^&/, '?').replace(/\?$/, '');
+                window.history.replaceState({}, document.title, newUrl || window.location.pathname);
+            }
+        });
+    </script>
 </body>
 
 </html>

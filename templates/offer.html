@@ -9,6 +9,8 @@
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
+        <button class="btn btn-primary" onclick="exportSelectedOffers()"
+            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中报价.csv</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
             style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
         <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增报价</button>
@@ -29,6 +31,13 @@
             <input type="date" name="end_date" value="{{ end_date }}"
                 style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;" title="结束日期">
         </div>
+        <select name="cli_id"
+            style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; min-width: 150px;">
+            <option value="">全部客户</option>
+            {% for cli in cli_list %}
+            <option value="{{ cli.cli_id }}" {% if cli.cli_id==cli_id %}selected{% endif %}>{{ cli.cli_name }}</option>
+            {% endfor %}
+        </select>
         <select name="page_size" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
             <option value="20" {% if page_size==20 %}selected{% endif %}>20条/页</option>
             <option value="50" {% if page_size==50 %}selected{% endif %}>50条/页</option>
@@ -53,22 +62,21 @@
                     {% endif %}
                     <th style="min-width: 120px;">报价编号</th>
                     <th style="min-width: 90px;">日期</th>
+                    <th style="min-width: 100px;">客户名称</th>
                     <th style="min-width: 120px;">需求编号</th>
                     <th style="min-width: 130px;">询价型号</th>
                     <th style="min-width: 130px;">报价型号</th>
-                    <th style="min-width: 80px;">询价品牌</th>
-                    <th style="min-width: 80px;">报价品牌</th>
+                    <th style="min-width: 80px;">品牌</th>
                     <th style="min-width: 70px;">需求(pcs)</th>
-                    <th style="min-width: 70px;">实际(pcs)</th>
                     <th style="min-width: 70px;">报价(pcs)</th>
                     <th style="min-width: 70px;">成本价</th>
                     <th style="min-width: 70px;">报价</th>
                     <th style="min-width: 80px;">平台</th>
                     <th style="min-width: 120px;">供应商</th>
-                    <th style="min-width: 70px;">货期</th>
-                    <th style="min-width: 70px;">交期</th>
+                    <th style="min-width: 80px;">批号(DC)</th>
+                    <th style="min-width: 80px;">交期(LT)</th>
                     <th style="min-width: 80px;">负责人</th>
-                    <th style="min-width: 150px;">报价语句</th>
+                    <th style="min-width: 350px;">拼接信息</th>
                     <th style="min-width: 120px;">备注</th>
                     {% if current_user.rule == '3' %}
                     <th style="min-width: 80px; position: sticky; right: 0; background: white; z-index: 1;">操作</th>
@@ -84,20 +92,17 @@
                     {% endif %}
                     <td>{{ row.offer_id }}</td>
                     <td>{{ row.offer_date }}</td>
+                    <td>{{ row.cli_name }}</td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quote_id')"><span>{{ row.quote_id
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
                             }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{
-                            row.inquiry_brand }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_brand')"><span>{{ row.quoted_brand
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
                             row.inquiry_qty }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'actual_qty', 'number')"><span>{{
-                            row.actual_qty }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_qty', 'number')"><span>{{
                             row.quoted_qty }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
@@ -121,8 +126,8 @@
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'delivery_date')"><span>{{
                             row.delivery_date }}</span></td>
                     <td>{{ row.emp_name }}</td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'offer_statement')"><span>{{
-                            row.offer_statement }}</span></td>
+                    <td style="font-size: 0.85rem; color: var(--secondary); background: #f8fafc;">{{
+                        row.combined_offer_info }}</td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'remark')"><span>{{ row.remark }}</span>
                     </td>
 
@@ -224,12 +229,12 @@
                 </div>
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">实际数量</label>
-                    <input type="number" name="actual_qty" value="0"
+                    <input type="number" name="actual_qty" id="formActualQty" value="0"
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价数量</label>
-                    <input type="number" name="quoted_qty" value="0"
+                    <input type="number" name="quoted_qty" id="formQuotedQty" value="0"
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
             </div>
@@ -267,12 +272,12 @@
 
             <div style="display: flex; gap: 1rem;">
                 <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">货期 (Date Code)</label>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (DC)</label>
                     <input type="text" name="date_code"
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
                 <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期</label>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (LT)</label>
                     <input type="text" name="delivery_date"
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
@@ -358,6 +363,8 @@
                     document.getElementById('formQuotedMpn').value = q.quoted_mpn || '';
                     document.getElementById('formInquiryBrand').value = q.inquiry_brand || '';
                     document.getElementById('formInquiryQty').value = q.inquiry_qty || 0;
+                    document.getElementById('formActualQty').value = q.inquiry_qty || 0;
+                    document.getElementById('formQuotedQty').value = q.inquiry_qty || 0;
                     document.getElementById('inheritMsg').innerHTML = `<span style="color: green;">✓ 成功带入需求: ${q.inquiry_mpn} (${q.cli_name || '未知客户'})</span>`;
                 } else {
                     document.getElementById('inheritMsg').innerHTML = `<span style="color: red;">✗ 找不到该需求编号</span>`;
@@ -480,6 +487,40 @@
                     if (data.success) window.location.reload();
                     else alert('批量删除失败: ' + data.message);
                 });
+        }
+    }
+
+    async function exportSelectedOffers() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要导出的报价记录');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/offer/export_csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                const blob = new Blob([data.csv_content], { type: 'text/csv;charset=utf-8-sig;' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `offer_batch_export_${new Date().getTime()}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('导出失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
         }
     }
 </script>

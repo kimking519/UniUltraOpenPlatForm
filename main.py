@@ -358,8 +358,8 @@ async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(l
 
 # ---------------- Quote Module ----------------
 @app.get("/quote", response_class=HTMLResponse)
-async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = ""):
-    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date)
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
+    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id)
     total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
     return templates.TemplateResponse("quote.html", {
@@ -374,6 +374,7 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
         "search": search,
         "start_date": start_date,
         "end_date": end_date,
+        "cli_id": cli_id,
         "cli_list": cli_list
     })
 
@@ -383,15 +384,22 @@ async def quote_add(request: Request, current_user: dict = Depends(login_require
         return RedirectResponse(url="/quote", status_code=303)
     form = await request.form()
     data = dict(form)
-    add_quote(data)
-    return RedirectResponse(url="/quote", status_code=303)
+    ok, msg = add_quote(data)
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/quote?msg={msg_param}&success={success}", status_code=303)
 
 @app.post("/quote/import")
 async def quote_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/quote", status_code=303)
     success_count, errors = batch_import_quote_text(batch_text)
-    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}", status_code=303)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/quote/import/csv")
 async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
@@ -406,7 +414,11 @@ async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict 
     if '\n' in text:
         text = text.split('\n', 1)[1] # skip header
     success_count, errors = batch_import_quote_text(text)
-    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}", status_code=303)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/api/quote/update")
 async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
@@ -453,14 +465,45 @@ async def get_quote_info_api(id: str, current_user: dict = Depends(login_require
             return {"success": True, "data": dict(row)}
         return {"success": False, "message": "未找到"}
 
+@app.post("/api/quote/export_offer_csv")
+async def quote_export_offer_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录进行导出"}
+        
+    from Sills.base import get_db_connection
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        quotes = conn.execute(f"SELECT * FROM uni_quote WHERE quote_id IN ({placeholders})", ids).fetchall()
+        
+    import io, csv
+    output = io.StringIO()
+    # Excel will render utf-8-sig properly
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(['需求编号','询价型号','报价型号','询价品牌','报价品牌','询价数量','实际数量','报价数量','成本价','报价','平台','供应商编号','货期','交期','报价语句','备注'])
+    
+    for q in quotes:
+        q_dict = dict(q)
+        writer.writerow([
+            q_dict.get('quote_id', ''), q_dict.get('inquiry_mpn', ''), q_dict.get('quoted_mpn', ''),
+            q_dict.get('inquiry_brand', ''), '', q_dict.get('inquiry_qty', 0), '', '',
+            q_dict.get('cost_price_rmb', 0.0), '', '', '', '', '', '', q_dict.get('remark', '')
+        ])
+        
+    return {"success": True, "csv_content": output.getvalue()}
+
 # ---------------- Offer Module ----------------
 @app.get("/offer", response_class=HTMLResponse)
-async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = ""):
-    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date)
+async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
+    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id)
     total_pages = (total + page_size - 1) // page_size
     from Sills.base import get_paginated_list
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
     vendor_list = vendor_data['items']
+    cli_data = get_paginated_list('uni_cli', page=1, page_size=1000)
+    cli_list = cli_data['items']
     return templates.TemplateResponse("offer.html", {
         "request": request,
         "active_page": "offer",
@@ -473,7 +516,9 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
         "search": search,
         "start_date": start_date,
         "end_date": end_date,
-        "vendor_list": vendor_list
+        "cli_id": cli_id,
+        "vendor_list": vendor_list,
+        "cli_list": cli_list
     })
 
 @app.post("/offer/add")
@@ -482,15 +527,22 @@ async def offer_add(request: Request, current_user: dict = Depends(login_require
         return RedirectResponse(url="/offer", status_code=303)
     form = await request.form()
     data = dict(form)
-    add_offer(data, current_user['emp_id'])
-    return RedirectResponse(url="/offer", status_code=303)
+    ok, msg = add_offer(data, current_user['emp_id'])
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/offer?msg={msg_param}&success={success}", status_code=303)
 
 @app.post("/offer/import")
 async def offer_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/offer", status_code=303)
     success_count, errors = batch_import_offer_text(batch_text, current_user['emp_id'])
-    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}", status_code=303)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/offer/import/csv")
 async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
@@ -505,7 +557,11 @@ async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict 
     if '\n' in text:
         text = text.split('\n', 1)[1] # skip header
     success_count, errors = batch_import_offer_text(text, current_user['emp_id'])
-    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}", status_code=303)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/api/offer/update")
 async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
@@ -544,6 +600,37 @@ async def offer_batch_delete_api(request: Request, current_user: dict = Depends(
     ids = data.get("ids", [])
     success, msg = batch_delete_offer(ids)
     return {"success": success, "message": msg}
+
+@app.post("/api/offer/export_csv")
+async def offer_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录进行导出"}
+        
+    from Sills.base import get_db_connection
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        offers = conn.execute(f"SELECT * FROM uni_offer WHERE offer_id IN ({placeholders})", ids).fetchall()
+        
+    import io, csv
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(['报价编号','日期','需求编号','询价型号','报价型号','询价品牌','报价品牌','询价数量','实际数量','报价数量','成本价','报价','平台','供应商编号','批号','交期','报价语句','备注'])
+    
+    for row in offers:
+        r = dict(row)
+        writer.writerow([
+            r.get('offer_id'), r.get('offer_date'), r.get('quote_id'),
+            r.get('inquiry_mpn'), r.get('quoted_mpn'), r.get('inquiry_brand'), r.get('quoted_brand'),
+            r.get('inquiry_qty'), r.get('actual_qty'), r.get('quoted_qty'),
+            r.get('cost_price_rmb'), r.get('offer_price_rmb'), r.get('platform'),
+            r.get('vendor_id'), r.get('date_code'), r.get('delivery_date'),
+            r.get('offer_statement'), r.get('remark')
+        ])
+        
+    return {"success": True, "csv_content": output.getvalue()}
 
 @app.get("/order", response_class=HTMLResponse)
 async def order_page(request: Request, current_user: dict = Depends(login_required)):

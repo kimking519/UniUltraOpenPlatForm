@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date=""):
+def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id=""):
     offset = (page - 1) * page_size
     
     base_query = """
@@ -19,6 +19,9 @@ def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if end_date:
         base_query += " AND q.quote_date <= ?"
         params.append(end_date)
+    if cli_id:
+        base_query += " AND q.cli_id = ?"
+        params.append(cli_id)
         
     query = f"""
     SELECT q.*, c.cli_name, 
