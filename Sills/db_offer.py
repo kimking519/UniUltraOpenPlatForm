@@ -3,31 +3,36 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_offer_list(page=1, page_size=10, search_kw=""):
+def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date=""):
     offset = (page - 1) * page_size
-    query = """
-    SELECT o.*, 
-           v.vendor_name,
-           e.emp_name
+    
+    base_query = """
     FROM uni_offer o
     LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
     LEFT JOIN uni_emp e ON o.emp_id = e.emp_id
-    WHERE o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ?
+    WHERE (o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ?)
+    """
+    params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
+    
+    if start_date:
+        base_query += " AND o.offer_date >= ?"
+        params.append(start_date)
+    if end_date:
+        base_query += " AND o.offer_date <= ?"
+        params.append(end_date)
+        
+    query = f"""
+    SELECT o.*, v.vendor_name, e.emp_name
+    {base_query}
     ORDER BY o.created_at DESC
     LIMIT ? OFFSET ?
     """
-    count_query = """
-    SELECT COUNT(*) 
-    FROM uni_offer o
-    LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
-    LEFT JOIN uni_emp e ON o.emp_id = e.emp_id
-    WHERE o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ?
-    """
-    params = (f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%")
+    
+    count_query = f"SELECT COUNT(*) {base_query}"
     
     with get_db_connection() as conn:
         total = conn.execute(count_query, params).fetchone()[0]
-        items = conn.execute(query, params + (page_size, offset)).fetchall()
+        items = conn.execute(query, params + [page_size, offset]).fetchall()
         
         results = [
             {k: ("" if v is None else v) for k, v in dict(row).items()}
@@ -51,7 +56,7 @@ def add_offer(data, emp_id):
         params = (
             offer_id,
             offer_date,
-            data.get('quote_id'),
+            data.get('quote_id') if data.get('quote_id') else None,
             data.get('inquiry_mpn', ''),
             data.get('quoted_mpn', ''),
             data.get('inquiry_brand', ''),
@@ -62,7 +67,7 @@ def add_offer(data, emp_id):
             data.get('cost_price_rmb', 0.0),
             data.get('offer_price_rmb', 0.0),
             data.get('platform', ''),
-            data.get('vendor_id', ''),
+            data.get('vendor_id') if data.get('vendor_id') else None,
             data.get('date_code', ''),
             data.get('delivery_date', ''),
             emp_id,  # Set by the logged in user
@@ -104,6 +109,17 @@ def delete_offer(offer_id):
             conn.execute("DELETE FROM uni_offer WHERE offer_id = ?", (offer_id,))
             conn.commit()
             return True, "删除成功"
+    except Exception as e:
+        return False, str(e)
+
+def batch_delete_offer(offer_ids):
+    if not offer_ids: return True, "无选中记录"
+    try:
+        with get_db_connection() as conn:
+            placeholders = ','.join(['?'] * len(offer_ids))
+            conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({placeholders})", offer_ids)
+            conn.commit()
+            return True, "批量删除成功"
     except Exception as e:
         return False, str(e)
 

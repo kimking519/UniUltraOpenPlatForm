@@ -3,31 +3,39 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_quote_list(page=1, page_size=10, search_kw=""):
+def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date=""):
     offset = (page - 1) * page_size
-    query = """
+    
+    base_query = """
+    FROM uni_quote q
+    LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+    WHERE (q.inquiry_mpn LIKE ? OR q.quote_id LIKE ? OR c.cli_name LIKE ?)
+    """
+    params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
+    
+    if start_date:
+        base_query += " AND q.quote_date >= ?"
+        params.append(start_date)
+    if end_date:
+        base_query += " AND q.quote_date <= ?"
+        params.append(end_date)
+        
+    query = f"""
     SELECT q.*, c.cli_name, 
            (COALESCE(q.quoted_mpn, '') || ' | ' || 
             COALESCE(q.inquiry_brand, '') || ' | ' || 
             COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' pcs | ' || 
             COALESCE(q.remark, '')) as combined_info
-    FROM uni_quote q
-    LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
-    WHERE q.inquiry_mpn LIKE ? OR q.quote_id LIKE ? OR c.cli_name LIKE ?
+    {base_query}
     ORDER BY q.created_at DESC
     LIMIT ? OFFSET ?
     """
-    count_query = """
-    SELECT COUNT(*) 
-    FROM uni_quote q
-    LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
-    WHERE q.inquiry_mpn LIKE ? OR q.quote_id LIKE ? OR c.cli_name LIKE ?
-    """
-    params = (f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%")
+    
+    count_query = f"SELECT COUNT(*) {base_query}"
     
     with get_db_connection() as conn:
         total = conn.execute(count_query, params).fetchone()[0]
-        items = conn.execute(query, params + (page_size, offset)).fetchall()
+        items = conn.execute(query, params + [page_size, offset]).fetchall()
         
         results = [
             {k: ("" if v is None else v) for k, v in dict(row).items()}
@@ -119,5 +127,16 @@ def delete_quote(quote_id):
             conn.execute("DELETE FROM uni_quote WHERE quote_id = ?", (quote_id,))
             conn.commit()
             return True, "删除成功"
+    except Exception as e:
+        return False, str(e)
+
+def batch_delete_quote(quote_ids):
+    if not quote_ids: return True, "无选中记录"
+    try:
+        with get_db_connection() as conn:
+            placeholders = ','.join(['?'] * len(quote_ids))
+            conn.execute(f"DELETE FROM uni_quote WHERE quote_id IN ({placeholders})", quote_ids)
+            conn.commit()
+            return True, "批量删除成功"
     except Exception as e:
         return False, str(e)

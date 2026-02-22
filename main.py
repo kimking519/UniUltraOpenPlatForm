@@ -5,10 +5,10 @@ from fastapi.templating import Jinja2Templates
 from Sills.base import init_db, get_db_connection
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
-from Sills.db_vendor import get_vendor_list, add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
+from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
-from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote
-from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer
+from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote, batch_delete_quote
+from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer
 import uvicorn
 
 app = FastAPI()
@@ -358,9 +358,9 @@ async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(l
 
 # ---------------- Quote Module ----------------
 @app.get("/quote", response_class=HTMLResponse)
-async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, search: str = ""):
-    results, total = get_quote_list(page=page, page_size=15, search_kw=search)
-    total_pages = (total + 14) // 15
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = ""):
+    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date)
+    total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
     return templates.TemplateResponse("quote.html", {
         "request": request,
@@ -369,8 +369,11 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
         "items": results,
         "total": total,
         "page": page,
+        "page_size": page_size,
         "total_pages": total_pages,
         "search": search,
+        "start_date": start_date,
+        "end_date": end_date,
         "cli_list": cli_list
     })
 
@@ -432,6 +435,15 @@ async def quote_delete_api(quote_id: str = Form(...), current_user: dict = Depen
     success, msg = delete_quote(quote_id)
     return {"success": success, "message": msg}
 
+@app.post("/api/quote/batch_delete")
+async def quote_batch_delete_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_delete_quote(ids)
+    return {"success": success, "message": msg}
+
 @app.get("/api/quote/info")
 async def get_quote_info_api(id: str, current_user: dict = Depends(login_required)):
     from Sills.base import get_db_connection
@@ -443,10 +455,12 @@ async def get_quote_info_api(id: str, current_user: dict = Depends(login_require
 
 # ---------------- Offer Module ----------------
 @app.get("/offer", response_class=HTMLResponse)
-async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, search: str = ""):
-    results, total = get_offer_list(page=page, page_size=15, search_kw=search)
-    total_pages = (total + 14) // 15
-    vendor_list, _ = get_vendor_list(page=1, page_size=1000)
+async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = ""):
+    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.base import get_paginated_list
+    vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
+    vendor_list = vendor_data['items']
     return templates.TemplateResponse("offer.html", {
         "request": request,
         "active_page": "offer",
@@ -454,8 +468,11 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
         "items": results,
         "total": total,
         "page": page,
+        "page_size": page_size,
         "total_pages": total_pages,
         "search": search,
+        "start_date": start_date,
+        "end_date": end_date,
         "vendor_list": vendor_list
     })
 
@@ -517,6 +534,15 @@ async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depen
     if current_user['rule'] != '3':
         return {"success": False, "message": "仅管理员可删除"}
     success, msg = delete_offer(offer_id)
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/batch_delete")
+async def offer_batch_delete_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_delete_offer(ids)
     return {"success": success, "message": msg}
 
 @app.get("/order", response_class=HTMLResponse)
