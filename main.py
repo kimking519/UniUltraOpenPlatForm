@@ -5,9 +5,10 @@ from fastapi.templating import Jinja2Templates
 from Sills.base import init_db, get_db_connection
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
-from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
+from Sills.db_vendor import get_vendor_list, add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
-from Sills.db_quote import get_quote_list, add_quote, update_quote, delete_quote
+from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote
+from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer
 import uvicorn
 
 app = FastAPI()
@@ -382,6 +383,28 @@ async def quote_add(request: Request, current_user: dict = Depends(login_require
     add_quote(data)
     return RedirectResponse(url="/quote", status_code=303)
 
+@app.post("/quote/import")
+async def quote_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    success_count, errors = batch_import_quote_text(batch_text)
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/quote/import/csv")
+async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_quote_text(text)
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}", status_code=303)
+
 @app.post("/api/quote/update")
 async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
@@ -409,9 +432,92 @@ async def quote_delete_api(quote_id: str = Form(...), current_user: dict = Depen
     success, msg = delete_quote(quote_id)
     return {"success": success, "message": msg}
 
+@app.get("/api/quote/info")
+async def get_quote_info_api(id: str, current_user: dict = Depends(login_required)):
+    from Sills.base import get_db_connection
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT q.*, c.cli_name FROM uni_quote q LEFT JOIN uni_cli c ON q.cli_id = c.cli_id WHERE q.quote_id = ?", (id,)).fetchone()
+        if row:
+            return {"success": True, "data": dict(row)}
+        return {"success": False, "message": "未找到"}
+
+# ---------------- Offer Module ----------------
 @app.get("/offer", response_class=HTMLResponse)
-async def offer_page(request: Request, current_user: dict = Depends(login_required)):
-    return templates.TemplateResponse("offer.html", {"request": request, "active_page": "offer", "current_user": current_user})
+async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, search: str = ""):
+    results, total = get_offer_list(page=page, page_size=15, search_kw=search)
+    total_pages = (total + 14) // 15
+    vendor_list, _ = get_vendor_list(page=1, page_size=1000)
+    return templates.TemplateResponse("offer.html", {
+        "request": request,
+        "active_page": "offer",
+        "current_user": current_user,
+        "items": results,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "search": search,
+        "vendor_list": vendor_list
+    })
+
+@app.post("/offer/add")
+async def offer_add(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    form = await request.form()
+    data = dict(form)
+    add_offer(data, current_user['emp_id'])
+    return RedirectResponse(url="/offer", status_code=303)
+
+@app.post("/offer/import")
+async def offer_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    success_count, errors = batch_import_offer_text(batch_text, current_user['emp_id'])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/offer/import/csv")
+async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_offer_text(text, current_user['emp_id'])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/api/offer/update")
+async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+        
+    allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand', 
+                      'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 
+                      'platform', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": "非法字段"}
+        
+    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb']:
+        try:
+            val = float(value) if 'price' in field else int(value)
+            success, msg = update_offer(offer_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_offer(offer_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/delete")
+async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    success, msg = delete_offer(offer_id)
+    return {"success": success, "message": msg}
 
 @app.get("/order", response_class=HTMLResponse)
 async def order_page(request: Request, current_user: dict = Depends(login_required)):

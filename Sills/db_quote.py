@@ -9,7 +9,7 @@ def get_quote_list(page=1, page_size=10, search_kw=""):
     SELECT q.*, c.cli_name, 
            (COALESCE(q.quoted_mpn, '') || ' | ' || 
             COALESCE(q.inquiry_brand, '') || ' | ' || 
-            COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' | ' || 
+            COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' pcs | ' || 
             COALESCE(q.remark, '')) as combined_info
     FROM uni_quote q
     LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
@@ -62,6 +62,37 @@ def add_quote(data):
             return True, f"需求 {quote_id} 创建成功"
     except Exception as e:
         return False, str(e)
+
+def batch_import_quote_text(text):
+    lines = text.strip().split('\n')
+    success_count = 0
+    errors = []
+    for line in lines:
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) < 1: continue
+        
+        try:
+            data = {
+                "cli_id": parts[0],
+                "inquiry_mpn": parts[1] if len(parts) > 1 else "",
+                "quoted_mpn": parts[2] if len(parts) > 2 else "",
+                "inquiry_brand": parts[3] if len(parts) > 3 else "",
+                "inquiry_qty": int(parts[4]) if len(parts) > 4 and parts[4] else 0,
+                "target_price_rmb": float(parts[5]) if len(parts) > 5 and parts[5] else 0.0,
+                "cost_price_rmb": float(parts[6]) if len(parts) > 6 and parts[6] else 0.0,
+                "remark": parts[7] if len(parts) > 7 else ""
+            }
+            if not data["cli_id"] or not data["inquiry_mpn"]:
+                errors.append(f"{line}: 缺少必填的客户或型号")
+                continue
+                
+            ok, msg = add_quote(data)
+            if ok: success_count += 1
+            else: errors.append(f"{parts[1]}: {msg}")
+        except Exception as e:
+            errors.append(f"{line}: 数据格式解析失败 ({str(e)})")
+            
+    return success_count, errors
 
 def update_quote(quote_id, data):
     try:
