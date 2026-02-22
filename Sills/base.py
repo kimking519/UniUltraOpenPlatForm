@@ -164,8 +164,13 @@ def get_paginated_list(table_name, page=1, page_size=10, search_kwargs=None):
         total_count = conn.execute(count_query, params).fetchone()[0]
         items = conn.execute(query, params).fetchall()
         
+    results = [
+        {k: ("" if v is None else v) for k, v in dict(row).items()}
+        for row in items
+    ]
+        
     return {
-        "items": [dict(row) for row in items],
+        "items": results,
         "total_count": total_count,
         "page": page,
         "page_size": page_size,

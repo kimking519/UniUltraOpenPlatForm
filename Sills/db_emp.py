@@ -27,7 +27,11 @@ def get_emp_list(page=1, page_size=10, search=""):
     with get_db_connection() as conn:
         items = conn.execute(query, params).fetchall()
         total = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
-        return [dict(row) for row in items], total
+        results = [
+            {k: ("" if v is None else v) for k, v in dict(row).items()}
+            for row in items
+        ]
+        return results, total
 
 def add_employee(data):
     # data is a dict containing all fields except emp_id

@@ -168,7 +168,7 @@
         if (td.querySelector('input')) return;
         const isSpan = td.querySelector('span') !== null;
         const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
-        td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100px; padding: 4px;">`;
+        td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100%; min-width: 80px; padding: 4px; box-sizing: border-box;">`;
         const input = td.querySelector('input');
         input.focus();
 
