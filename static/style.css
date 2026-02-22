@@ -42,7 +42,7 @@ body {
     font-size: 1.5rem;
     font-weight: 700;
     text-align: center;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--accent);
 }
 
@@ -62,8 +62,9 @@ body {
     font-weight: 500;
 }
 
-.menu-item:hover, .menu-item.active {
-    background-color: rgba(255,255,255,0.1);
+.menu-item:hover,
+.menu-item.active {
+    background-color: rgba(255, 255, 255, 0.1);
     color: var(--accent);
     padding-left: 2.5rem;
 }
@@ -89,7 +90,7 @@ body {
 .container {
     flex: 1;
     padding: 2rem;
-    overflow-y: auto;
+    overflow-y: scroll;
 }
 
 /* Dashboard Cards */
@@ -176,8 +177,15 @@ tr:last-child td {
 
 /* Animations */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .fade-in {

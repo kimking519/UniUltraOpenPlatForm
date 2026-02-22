@@ -4,7 +4,7 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
     <h1>2. 员工管理 (uni_emp)</h1>
-    {% if current_user.rule == '3' or current_user.rule == '0' %}
+    {% if current_user.rule == '3' %}
     <div style="display: flex; gap: 1rem;">
         <button class="btn" style="background: var(--secondary); color: white;"
             onclick="toggleModal('importModal')">批量导入</button>
@@ -167,7 +167,7 @@
     function makeEditable(td, emp_id, field, inputType = 'text') {
         if (td.querySelector('input')) return;
         const isSpan = td.querySelector('span') !== null;
-        const originalValue = isSpan ? td.querySelector('span').innerText : td.innerText;
+        const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
         td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100px; padding: 4px;">`;
         const input = td.querySelector('input');
         input.focus();
