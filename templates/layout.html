@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 </head>
+
 <body>
     <div class="sidebar">
         <div class="sidebar-header">UniUltra</div>
@@ -15,7 +17,7 @@
             <a href="/daily" class="menu-item {% if active_page == 'daily' %}active{% endif %}">1. 动态参数</a>
             <a href="/emp" class="menu-item {% if active_page == 'emp' %}active{% endif %}">2. 员工管理</a>
             <a href="/cli" class="menu-item {% if active_page == 'cli' %}active{% endif %}">3. 客户表</a>
-            <a href="/quote" class="menu-item {% if active_page == 'quote' %}active{% endif %}">4. 需求表</a>
+            <a href="#" class="menu-item {% if active_page == 'quote' %}active{% endif %}">4. 需求表</a>
             <a href="/vendor" class="menu-item {% if active_page == 'vendor' %}active{% endif %}">5. 供应商表</a>
             <a href="/offer" class="menu-item {% if active_page == 'offer' %}active{% endif %}">6. 报价订单</a>
             <a href="/order" class="menu-item {% if active_page == 'order' %}active{% endif %}">7. 销售订单</a>
@@ -35,4 +37,5 @@
         </main>
     </div>
 </body>
+
 </html>
