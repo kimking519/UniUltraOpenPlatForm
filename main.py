@@ -6,7 +6,8 @@ from Sills.base import init_db, get_db_connection
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
-from Sills.db_cli import add_cli, batch_import_cli_text, update_cli, delete_cli
+from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
+from Sills.db_quote import get_quote_list, add_quote, update_quote, delete_quote
 import uvicorn
 
 app = FastAPI()
@@ -349,14 +350,64 @@ async def cli_update_api(cli_id: str = Form(...), field: str = Form(...), value:
 
 @app.post("/api/cli/delete")
 async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(login_required)):
-    if current_user['rule'] not in ['3', '0']:
-        return {"success": False, "message": "无权限"}
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
     success, msg = delete_cli(cli_id)
     return {"success": success, "message": msg}
 
+# ---------------- Quote Module ----------------
 @app.get("/quote", response_class=HTMLResponse)
-async def quote_page(request: Request, current_user: dict = Depends(login_required)):
-    return templates.TemplateResponse("quote.html", {"request": request, "active_page": "quote", "current_user": current_user})
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, search: str = ""):
+    results, total = get_quote_list(page=page, page_size=15, search_kw=search)
+    total_pages = (total + 14) // 15
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    return templates.TemplateResponse("quote.html", {
+        "request": request,
+        "active_page": "quote",
+        "current_user": current_user,
+        "items": results,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "search": search,
+        "cli_list": cli_list
+    })
+
+@app.post("/quote/add")
+async def quote_add(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    form = await request.form()
+    data = dict(form)
+    add_quote(data)
+    return RedirectResponse(url="/quote", status_code=303)
+
+@app.post("/api/quote/update")
+async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+        
+    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'target_price_rmb', 'cost_price_rmb', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": "非法字段"}
+        
+    if field in ['inquiry_qty', 'target_price_rmb', 'cost_price_rmb']:
+        try:
+            val = float(value) if 'price' in field else int(value)
+            success, msg = update_quote(quote_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_quote(quote_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/delete")
+async def quote_delete_api(quote_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    success, msg = delete_quote(quote_id)
+    return {"success": success, "message": msg}
 
 @app.get("/offer", response_class=HTMLResponse)
 async def offer_page(request: Request, current_user: dict = Depends(login_required)):

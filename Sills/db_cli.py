@@ -1,6 +1,27 @@
 import sqlite3
 from Sills.base import get_db_connection
 
+def get_cli_list(page=1, page_size=10, search_kw=""):
+    offset = (page - 1) * page_size
+    query = """
+    SELECT * FROM uni_cli 
+    WHERE cli_name LIKE ? OR region LIKE ? OR cli_id LIKE ?
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+    """
+    count_query = "SELECT COUNT(*) FROM uni_cli WHERE cli_name LIKE ? OR region LIKE ? OR cli_id LIKE ?"
+    params = (f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%")
+    
+    with get_db_connection() as conn:
+        total = conn.execute(count_query, params).fetchone()[0]
+        items = conn.execute(query, params + (page_size, offset)).fetchall()
+        
+        results = [
+            {k: ("" if v is None else v) for k, v in dict(row).items()}
+            for row in items
+        ]
+        return results, total
+
 def get_next_cli_id():
     with get_db_connection() as conn:
         row = conn.execute("SELECT MAX(cli_id) FROM uni_cli").fetchone()
