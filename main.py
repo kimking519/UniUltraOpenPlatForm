@@ -150,7 +150,7 @@ async def emp_page(request: Request, page: int = 1, search: str = "", current_us
 @app.post("/emp/add")
 async def emp_add(
     emp_name: str = Form(...), department: str = Form(""), position: str = Form(""),
-    contact: str = Form(""), account: str = Form(...),
+    contact: str = Form(""), account: str = Form(...), hire_date: str = Form(...),
     rule: str = Form("1"), remark: str = Form(""),
     current_user: dict = Depends(login_required)
 ):
@@ -160,6 +160,7 @@ async def emp_add(
     data = {
         "emp_name": emp_name, "department": department, "position": position,
         "contact": contact, "account": account, "password": "12345",
+        "hire_date": hire_date,
         "rule": rule, "remark": remark
     }
     success, msg = add_employee(data)

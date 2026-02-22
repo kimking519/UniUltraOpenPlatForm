@@ -93,8 +93,11 @@
                 <input type="text" name="department" placeholder="部门" style="padding: 0.5rem;">
                 <input type="text" name="position" placeholder="职位" style="padding: 0.5rem;">
             </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <input type="text" name="contact" placeholder="联系方式" style="padding: 0.5rem;">
+                <input type="date" name="hire_date" required style="padding: 0.5rem;" title="入职时间">
+            </div>
             <input type="text" name="rule" placeholder="角色权限(0写,1读,3管理,4黑)" style="padding: 0.5rem;" value="1">
-            <input type="text" name="contact" placeholder="联系方式" style="padding: 0.5rem;">
             <textarea name="remark" placeholder="备注" style="padding: 0.5rem; height: 60px;"></textarea>
             <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
                 <button type="button" class="btn" onclick="toggleModal('addModal')">取消</button>
