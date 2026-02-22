@@ -10,6 +10,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     FROM uni_buy b
     LEFT JOIN uni_order ord ON b.order_id = ord.order_id
     LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id
+    LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
     WHERE (b.buy_id LIKE ? OR b.buy_mpn LIKE ? OR v.vendor_name LIKE ?)
     """
     params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
@@ -29,12 +30,9 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     if is_shipped in ('0', '1'):
         base_query += " AND b.is_shipped = ?"
         params.append(int(is_shipped))
-    if cli_id:
-        base_query += " AND ord.cli_id = ?"
-        params.append(cli_id)
         
     query = f"""
-    SELECT b.*, ord.order_id, v.vendor_name, ord.cli_id
+    SELECT b.*, ord.order_id, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name
     {base_query}
     ORDER BY b.created_at DESC
     LIMIT ? OFFSET ?
@@ -46,10 +44,12 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
         total = conn.execute(count_query, params).fetchone()[0]
         items = conn.execute(query, params + [page_size, offset]).fetchall()
         
-        results = [
-            {k: ("" if v is None else v) for k, v in dict(row).items()}
-            for row in items
-        ]
+        results = []
+        for row in items:
+            d = dict(row)
+            # Ensure price and qty are numbers for calculation if needed later
+            results.append({k: ("" if v is None else v) for k, v in d.items()})
+            
         return results, total
 
 def add_buy(data, conn=None):
@@ -278,8 +278,6 @@ def update_buy(buy_id, data):
 def delete_buy(buy_id):
     try:
         with get_db_connection() as conn:
-            conn.execute("DELETE FROM uni_order WHERE order_id = ?", (buy_id,)) # Wait, this looks like a bug in original code, should be uni_buy
-            # Corrected below:
             conn.execute("DELETE FROM uni_buy WHERE buy_id = ?", (buy_id,))
             conn.commit()
             return True, "删除成功"

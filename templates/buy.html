@@ -64,7 +64,10 @@
                 <th>采购编号</th>
                 <th>日期</th>
                 <th>对应销售单</th>
+                <th>客户 ID</th>
+                <th>客户名称</th>
                 <th>供应商</th>
+                <th>供应商地址</th>
                 <th>型号</th>
                 <th>品牌</th>
                 <th>采购单价 (RMB)</th>
@@ -81,7 +84,13 @@
                 <td>{{ item.buy_id }}</td>
                 <td>{{ item.buy_date }}</td>
                 <td>{{ item.order_id }}</td>
+                <td>{{ item.cli_id }}</td>
+                <td>{{ item.cli_name }}</td>
                 <td>{{ item.vendor_name }}</td>
+                <td>
+                    <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                        title="{{ item.vendor_address }}">{{ item.vendor_address }}</div>
+                </td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_mpn', '{{ item.buy_mpn }}')"
                     style="cursor: pointer; color: var(--primary);">{{ item.buy_mpn }}</td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_brand', '{{ item.buy_brand }}')"
@@ -93,23 +102,28 @@
                 <td style="font-weight: 700;">{{ item.total_amount }}</td>
                 <td>
                     <div class="status-nodes">
-                        <div class="node {% if item.is_source_confirmed %}active{% endif %}" title="货源确认">
-                            <input type="checkbox" {% if item.is_source_confirmed %}checked{% endif %}
+                        <div class="node {% if item.is_source_confirmed == 1 or item.is_source_confirmed == '1' %}active{% endif %}"
+                            title="货源确认">
+                            <input type="checkbox" {% if item.is_source_confirmed==1 or item.is_source_confirmed=='1'
+                                %}checked{% endif %}
                                 onchange="toggleNode('{{ item.buy_id }}', 'is_source_confirmed', this.checked)">
                             <span>货源</span>
                         </div>
-                        <div class="node {% if item.is_ordered %}active{% endif %}" title="下单确认">
-                            <input type="checkbox" {% if item.is_ordered %}checked{% endif %}
+                        <div class="node {% if item.is_ordered == 1 or item.is_ordered == '1' %}active{% endif %}"
+                            title="下单确认">
+                            <input type="checkbox" {% if item.is_ordered==1 or item.is_ordered=='1' %}checked{% endif %}
                                 onchange="toggleNode('{{ item.buy_id }}', 'is_ordered', this.checked)">
                             <span>下单</span>
                         </div>
-                        <div class="node {% if item.is_instock %}active{% endif %}" title="入库确认">
-                            <input type="checkbox" {% if item.is_instock %}checked{% endif %}
+                        <div class="node {% if item.is_instock == 1 or item.is_instock == '1' %}active{% endif %}"
+                            title="入库确认">
+                            <input type="checkbox" {% if item.is_instock==1 or item.is_instock=='1' %}checked{% endif %}
                                 onchange="toggleNode('{{ item.buy_id }}', 'is_instock', this.checked)">
                             <span>入库</span>
                         </div>
-                        <div class="node {% if item.is_shipped %}active{% endif %}" title="发货确认">
-                            <input type="checkbox" {% if item.is_shipped %}checked{% endif %}
+                        <div class="node {% if item.is_shipped == 1 or item.is_shipped == '1' %}active{% endif %}"
+                            title="发货确认">
+                            <input type="checkbox" {% if item.is_shipped==1 or item.is_shipped=='1' %}checked{% endif %}
                                 onchange="toggleNode('{{ item.buy_id }}', 'is_shipped', this.checked)">
                             <span>发货</span>
                         </div>

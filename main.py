@@ -773,6 +773,25 @@ async def buy_import_text(batch_text: str = Form(None), csv_file: UploadFile = F
     if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
     return RedirectResponse(url=f"/buy?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
+@app.post("/api/buy/update_node")
+async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
+    from Sills.db_buy import update_buy_node
+    ok, msg = update_buy_node(buy_id, field, value)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/update")
+async def api_buy_update(buy_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    from Sills.db_buy import update_buy
+    ok, msg = update_buy(buy_id, {field: value})
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/delete")
+async def api_buy_delete(buy_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    from Sills.db_buy import delete_buy
+    ok, msg = delete_buy(buy_id)
+    return {"success": ok, "message": msg}
+
 @app.post("/api/buy/batch_delete")
 async def api_buy_batch_delete(request: Request, current_user: dict = Depends(login_required)):
     if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
