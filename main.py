@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response, Cookie
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response, Cookie, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -175,6 +175,18 @@ async def emp_import(import_text: str = Form(...), current_user: dict = Depends(
     success_count, errors = batch_import_text(import_text)
     return RedirectResponse(url=f"/emp?import_success={success_count}&errors={len(errors)}", status_code=303)
 
+@app.post("/emp/import/csv")
+async def emp_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/emp", status_code=303)
+    content = await csv_file.read()
+    # Decode ignoring header row (assuming typical CSV template usage)
+    text = content.decode('utf-8-sig').strip()
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_text(text)
+    return RedirectResponse(url=f"/emp?import_success={success_count}&errors={len(errors)}", status_code=303)
+
 @app.post("/api/emp/update")
 async def emp_update_api(emp_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
@@ -226,6 +238,17 @@ async def vendor_import(import_text: str = Form(...), current_user: dict = Depen
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/vendor", status_code=303)
     success_count, errors = batch_import_vendor_text(import_text)
+    return RedirectResponse(url=f"/vendor?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/vendor/import/csv")
+async def vendor_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/vendor", status_code=303)
+    content = await csv_file.read()
+    text = content.decode('utf-8-sig').strip()
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_vendor_text(text)
     return RedirectResponse(url=f"/vendor?import_success={success_count}&errors={len(errors)}", status_code=303)
 
 @app.post("/api/vendor/update")
@@ -281,6 +304,17 @@ async def cli_import(import_text: str = Form(...), current_user: dict = Depends(
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/cli", status_code=303)
     success_count, errors = batch_import_cli_text(import_text)
+    return RedirectResponse(url=f"/cli?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/cli/import/csv")
+async def cli_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/cli", status_code=303)
+    content = await csv_file.read()
+    text = content.decode('utf-8-sig').strip()
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_cli_text(text)
     return RedirectResponse(url=f"/cli?import_success={success_count}&errors={len(errors)}", status_code=303)
 
 @app.post("/api/cli/update")
