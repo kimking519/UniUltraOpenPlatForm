@@ -17,14 +17,28 @@ description: 自动从销售聊天、邮件或日常笔记中提取电子元组�
 
 ## Prerequisites
 
-此 Skill 依赖 Python 及 `requests` 库来与 UniUltra API 交互：
+此 Skill 依赖 Python。
+- 如果在 Windows 下运行：直接使用本地路径。
+- 如果在 **WSL (Ubuntu)** 下运行：可以通过 `/mnt/` 挂载点访问 Windows 目录下的数据库。
 
 ```bash
-# 安装依赖
-pip install requests
+# WSL 路径映射参考
+# Windows: E:\7_AI_APP\UniUltraOpenPlatForm\uni_platform.db
+# WSL:     /mnt/e/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db
 ```
 
-确保 UniUltra 平台已启动（默认地址：`http://127.0.0.1:8000`）。
+## WSL & 环境配置
+
+为了让运行在 WSL 里的 OpenClaw 能够直接读取数据（用于校验客户 ID 等），Skill 提供了 `db_tool.py`。
+
+**常用命令：**
+
+```bash
+# 在 WSL 中查询客户 ID (根据名称模糊搜索)
+python openclaw_skills/sale-input-needs/scripts/db_tool.py \
+  --db_path "/mnt/e/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db" \
+  --action find_cli --query "客户名称"
+```
 
 ## Quick Start
 
