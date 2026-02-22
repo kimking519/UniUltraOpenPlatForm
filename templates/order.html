@@ -22,27 +22,36 @@
         </select>
     </div>
     <div>
-        <label>开始日期</label>
+        <label>完结状态</label>
+        <select id="filter_finished" onchange="applyFilter()" style="padding: 0.4rem;">
+            <option value="">全部状态</option>
+            <option value="0" {% if is_finished=='0' %}selected{% endif %}>未完结</option>
+            <option value="1" {% if is_finished=='1' %}selected{% endif %}>已完结</option>
+        </select>
+    </div>
+    <div>
+        <label>日期从</label>
         <input type="date" id="start_date" value="{{ start_date }}" style="padding: 0.4rem;">
     </div>
     <div>
-        <label>结束日期</label>
+        <label>日期至</label>
         <input type="date" id="end_date" value="{{ end_date }}" style="padding: 0.4rem;">
     </div>
     <div>
         <label>搜索</label>
-        <input type="text" id="search_input" value="{{ search }}" placeholder="订单号/型号..." style="padding: 0.4rem;">
+        <input type="text" id="search_input" value="{{ search }}" placeholder="订单号/型号/客户..." style="padding: 0.4rem;">
     </div>
     <button class="btn btn-primary" onclick="applyFilter()">查询</button>
 </div>
 
 <div class="batch-actions" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
+    <button class="btn" style="color: var(--primary);" onclick="batchConvertToBuy()">转为采购记录</button>
     <button class="btn" onclick="batchExport()">批量导出 CSV</button>
     <button class="btn" style="color: red;" onclick="batchDelete()">批量删除</button>
 </div>
 
 <div class="table-container">
-    <table>
+    <table style="font-size: 0.85rem;">
         <thead>
             <tr>
                 <th><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
@@ -104,13 +113,13 @@
 
 <div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
     {% if page is defined and page > 1 %}
-    <a href="/order?page={{ page-1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}"
+    <a href="/order?page={{ page-1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_finished={{ is_finished }}"
         class="btn">上一页</a>
     {% endif %}
     <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
         total is defined else 0 }} 条)</span>
     {% if page is defined and total_pages is defined and page < total_pages %} <a
-        href="/order?page={{ page+1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}"
+        href="/order?page={{ page+1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_finished={{ is_finished }}"
         class="btn">下一页</a>
         {% endif %}
 </div>

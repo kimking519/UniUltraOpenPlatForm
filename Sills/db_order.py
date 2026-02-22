@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="", end_date=""):
+def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="", end_date="", is_finished=""):
     offset = (page - 1) * page_size
     query = """
     FROM uni_order o
@@ -22,6 +22,9 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
     if end_date:
         query += " AND o.order_date <= ?"
         params.append(end_date)
+    if is_finished in ('0', '1'):
+        query += " AND o.is_finished = ?"
+        params.append(int(is_finished))
 
     count_sql = "SELECT COUNT(*) " + query
     data_sql = "SELECT o.*, c.cli_name, off.quoted_mpn " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"

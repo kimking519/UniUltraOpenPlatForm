@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="", end_date="", cli_id=""):
+def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="", end_date="", cli_id="", is_shipped=""):
     offset = (page - 1) * page_size
     
     base_query = """
@@ -23,6 +23,12 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     if end_date:
         base_query += " AND b.buy_date <= ?"
         params.append(end_date)
+    if cli_id:
+        base_query += " AND ord.cli_id = ?"
+        params.append(cli_id)
+    if is_shipped in ('0', '1'):
+        base_query += " AND b.is_shipped = ?"
+        params.append(int(is_shipped))
     if cli_id:
         base_query += " AND ord.cli_id = ?"
         params.append(cli_id)

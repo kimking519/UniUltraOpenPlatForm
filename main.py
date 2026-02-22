@@ -634,8 +634,8 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
     return {"success": True, "csv_content": output.getvalue()}
 
 @app.get("/order", response_class=HTMLResponse)
-async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = ""):
-    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date)
+async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_finished: str = ""):
+    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date, is_finished=is_finished)
     total_pages = (total + page_size - 1) // page_size
     from Sills.db_cli import get_cli_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
@@ -643,7 +643,8 @@ async def order_page(request: Request, current_user: dict = Depends(login_requir
         "request": request, "active_page": "order", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
         "total_pages": total_pages, "search": search, "cli_id": cli_id, 
-        "start_date": start_date, "end_date": end_date, "cli_list": cli_list
+        "start_date": start_date, "end_date": end_date, "cli_list": cli_list,
+        "is_finished": is_finished
     })
 
 @app.post("/order/add")
@@ -737,8 +738,8 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
     return {"success": True, "csv_content": output.getvalue()}
 
 @app.get("/buy", response_class=HTMLResponse)
-async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
-    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id)
+async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_shipped: str = ""):
+    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id, is_shipped=is_shipped)
     total_pages = (total + page_size - 1) // page_size
     with get_db_connection() as conn:
         vendors = conn.execute("SELECT vendor_id, vendor_name FROM uni_vendor").fetchall()
@@ -749,12 +750,24 @@ async def buy_page(request: Request, current_user: dict = Depends(login_required
         "items": results, "total": total, "page": page, "page_size": page_size,
         "total_pages": total_pages, "search": search, "order_id": order_id,
         "start_date": start_date, "end_date": end_date, "cli_id": cli_id,
-        "vendor_list": vendors, "order_list": orders, "cli_list": clis
+        "vendor_list": vendors, "order_list": orders, "cli_list": clis,
+        "is_shipped": is_shipped
     })
 
 @app.post("/buy/import")
-async def buy_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
-    success_count, errors = batch_import_buy(batch_text)
+async def buy_import_text(batch_text: str = Form(None), csv_file: UploadFile = File(None), current_user: dict = Depends(login_required)):
+    if batch_text:
+        text = batch_text
+    elif csv_file:
+        content = await csv_file.read()
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+    else:
+        return RedirectResponse(url="/buy?import_success=0&errors=1&msg=未提供导入内容", status_code=303)
+        
+    success_count, errors = batch_import_buy(text)
     import urllib.parse
     err_msg = ""
     if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
