@@ -1,5 +1,7 @@
 import sqlite3
 import uuid
+import csv
+import io
 from datetime import datetime
 from Sills.base import get_db_connection
 
@@ -52,68 +54,102 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         ]
         return results, total
 
-def add_offer(data, emp_id):
+def add_offer(data, emp_id, conn=None):
     try:
         hex_str = str(uuid.uuid4().hex)
         offer_id = "O" + datetime.now().strftime("%Y%m%d%H%M%S") + hex_str[:4]
         offer_date = datetime.now().strftime("%Y-%m-%d")
 
         quote_id = data.get('quote_id')
-        if quote_id:
-            with get_db_connection() as conn:
+        if quote_id and str(quote_id).strip() == "":
+            quote_id = None
+            
+        vendor_id = data.get('vendor_id')
+        if vendor_id and str(vendor_id).strip() == "":
+            vendor_id = None
+
+        # Validation Logic
+        must_close = False
+        if conn is None:
+            conn = get_db_connection()
+            must_close = True
+
+        try:
+            # 1. Emp Check
+            emp = conn.execute("SELECT emp_id FROM uni_emp WHERE emp_id = ?", (emp_id,)).fetchone()
+            if not emp:
+                return False, f"员工编号 {emp_id} 不存在"
+
+            # 2. Quote Check
+            if quote_id:
+                q_row = conn.execute("SELECT quote_id FROM uni_quote WHERE quote_id = ?", (quote_id,)).fetchone()
+                if not q_row:
+                    return False, f"需求编号 {quote_id} 不存在"
+                
+                # Uniqueness check
                 existing = conn.execute("SELECT offer_id FROM uni_offer WHERE quote_id = ?", (quote_id,)).fetchone()
                 if existing:
-                    return False, f"该需求编号 {quote_id} 已存在报价记录 {existing['offer_id']}，不可重复创建"
-        
-        sql = """
-        INSERT INTO uni_offer (
-            offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
-            inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, platform,
-            vendor_id, date_code, delivery_date, emp_id, offer_statement, remark
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        inquiry_qty = int(data.get('inquiry_qty', 0))
-        actual_qty = data.get('actual_qty')
-        quoted_qty = data.get('quoted_qty')
-        
-        # Default actual/quoted qty to inquiry_qty if not provided or 0
-        if not actual_qty or int(actual_qty) == 0:
-            actual_qty = inquiry_qty
-        else:
-            actual_qty = int(actual_qty)
+                    return False, f"该需求 {quote_id} 已转换过报价 ({existing['offer_id']})"
 
-        if not quoted_qty or int(quoted_qty) == 0:
-            quoted_qty = inquiry_qty
-        else:
-            quoted_qty = int(quoted_qty)
+            # 3. Vendor Check
+            if vendor_id:
+                v_row = conn.execute("SELECT vendor_id FROM uni_vendor WHERE vendor_id = ?", (vendor_id,)).fetchone()
+                if not v_row:
+                    return False, f"供应商编号 {vendor_id} 不存在"
 
-        params = (
-            offer_id,
-            offer_date,
-            data.get('quote_id') if data.get('quote_id') else None,
-            data.get('inquiry_mpn', ''),
-            data.get('quoted_mpn', ''),
-            data.get('inquiry_brand', ''),
-            data.get('quoted_brand', ''),
-            inquiry_qty,
-            actual_qty,
-            quoted_qty,
-            data.get('cost_price_rmb', 0.0),
-            data.get('offer_price_rmb', 0.0),
-            data.get('platform', ''),
-            data.get('vendor_id') if data.get('vendor_id') else None,
-            data.get('date_code', ''),
-            data.get('delivery_date', ''),
-            emp_id,  # Set by the logged in user
-            data.get('offer_statement', ''),
-            data.get('remark', '')
-        )
-        with get_db_connection() as conn:
+            # Numerical normalization
+            inquiry_qty = 0
+            try: inquiry_qty = int(data.get('inquiry_qty') or 0)
+            except: pass
+
+            actual_qty = data.get('actual_qty')
+            if not actual_qty or str(actual_qty).strip() == "" or str(actual_qty) == "0":
+                actual_qty = inquiry_qty
+            else:
+                try: actual_qty = int(actual_qty)
+                except: actual_qty = inquiry_qty
+
+            quoted_qty = data.get('quoted_qty')
+            if not quoted_qty or str(quoted_qty).strip() == "" or str(quoted_qty) == "0":
+                quoted_qty = inquiry_qty
+            else:
+                try: quoted_qty = int(quoted_qty)
+                except: quoted_qty = inquiry_qty
+
+            cost_price = 0.0
+            try: cost_price = float(data.get('cost_price_rmb') or 0.0)
+            except: pass
+
+            offer_price = 0.0
+            try: offer_price = float(data.get('offer_price_rmb') or 0.0)
+            except: pass
+
+            sql = """
+            INSERT INTO uni_offer (
+                offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
+                inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, platform,
+                vendor_id, date_code, delivery_date, emp_id, offer_statement, remark
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                offer_id, offer_date, quote_id,
+                data.get('inquiry_mpn', ''), data.get('quoted_mpn', ''),
+                data.get('inquiry_brand', ''), data.get('quoted_brand', ''),
+                inquiry_qty, actual_qty, quoted_qty,
+                cost_price, offer_price,
+                data.get('platform', ''), vendor_id,
+                data.get('date_code', ''), data.get('delivery_date', ''),
+                emp_id, data.get('offer_statement', ''), data.get('remark', '')
+            )
             conn.execute(sql, params)
-            conn.commit()
+            if must_close:
+                conn.commit()
             return True, f"报价单 {offer_id} 创建成功"
+        finally:
+            if must_close:
+                conn.close()
     except Exception as e:
-        return False, str(e)
+        return False, f"数据库错误: {str(e)}"
 
 def update_offer(offer_id, data):
     try:
@@ -158,40 +194,96 @@ def batch_delete_offer(offer_ids):
         return False, str(e)
 
 def batch_import_offer_text(text, emp_id):
-    lines = text.strip().split('\n')
+    import io, csv
+    f = io.StringIO(text.strip())
+    reader = csv.reader(f)
+    rows = list(reader)
     success_count = 0
     errors = []
-    for line in lines:
-        parts = [p.strip() for p in line.split(',')]
-        if len(parts) < 1: continue
+    
+    if not rows: return 0, []
+
+    # Heuristic to skip header: if the first column of the first row contains '编号' or 'MPN'
+    start_idx = 0
+    first_row = rows[0]
+    if len(first_row) > 0 and ('编号' in first_row[0] or '型号' in first_row[0] or 'MPN' in first_row[0].upper()):
+        start_idx = 1
+
+    for i, parts in enumerate(rows[start_idx:], start=start_idx + 1):
+        if not parts or len(parts) < 1: continue
         
         try:
             data = {
-                "quote_id": parts[0] if len(parts) > 0 else "",
+                "quote_id": parts[0] if len(parts) > 0 and parts[0].strip() else None,
                 "inquiry_mpn": parts[1] if len(parts) > 1 else "",
                 "quoted_mpn": parts[2] if len(parts) > 2 else "",
                 "inquiry_brand": parts[3] if len(parts) > 3 else "",
                 "quoted_brand": parts[4] if len(parts) > 4 else "",
-                "inquiry_qty": int(parts[5]) if len(parts) > 5 and parts[5] else 0,
-                "actual_qty": int(parts[6]) if len(parts) > 6 and parts[6] else None,
-                "quoted_qty": int(parts[7]) if len(parts) > 7 and parts[7] else None,
-                "cost_price_rmb": float(parts[8]) if len(parts) > 8 and parts[8] else 0.0,
-                "offer_price_rmb": float(parts[9]) if len(parts) > 9 and parts[9] else 0.0,
+                "inquiry_qty": 0,
+                "actual_qty": 0,
+                "quoted_qty": 0,
+                "cost_price_rmb": 0.0,
+                "offer_price_rmb": 0.0,
                 "platform": parts[10] if len(parts) > 10 else "",
-                "vendor_id": parts[11] if len(parts) > 11 else "",
+                "vendor_id": parts[11] if len(parts) > 11 and parts[11].strip() else None,
                 "date_code": parts[12] if len(parts) > 12 else "",
                 "delivery_date": parts[13] if len(parts) > 13 else "",
                 "offer_statement": parts[14] if len(parts) > 14 else "",
                 "remark": parts[15] if len(parts) > 15 else ""
             }
-            if not data["inquiry_mpn"]:
-                errors.append(f"{line}: 缺少询价型号")
+            
+            # Numeric values logic
+            try: data["inquiry_qty"] = int(parts[5]) if len(parts) > 5 and parts[5] else 0
+            except: pass
+            
+            try: data["actual_qty"] = int(parts[6]) if len(parts) > 6 and parts[6] else data["inquiry_qty"]
+            except: data["actual_qty"] = data["inquiry_qty"]
+            
+            try: data["quoted_qty"] = int(parts[7]) if len(parts) > 7 and parts[7] else data["inquiry_qty"]
+            except: data["quoted_qty"] = data["inquiry_qty"]
+            
+            try: data["cost_price_rmb"] = float(parts[8]) if len(parts) > 8 and parts[8] else 0.0
+            except: pass
+            
+            try: data["offer_price_rmb"] = float(parts[9]) if len(parts) > 9 and parts[9] else 0.0
+            except: pass
+
+            if not data["inquiry_mpn"] and not data["quoted_mpn"]:
+                errors.append(f"第 {i} 行: 缺少型号信息")
                 continue
                 
             ok, msg = add_offer(data, emp_id)
             if ok: success_count += 1
-            else: errors.append(f"{parts[1]}: {msg}")
+            else: errors.append(f"第 {i} 行 ({data.get('inquiry_mpn') or data.get('quoted_mpn')}): {msg}")
         except Exception as e:
-            errors.append(f"{line}: 数据格式解析失败 ({str(e)})")
+            errors.append(f"第 {i} 行: 数据格式解析失败 ({str(e)})")
             
     return success_count, errors
+
+def batch_convert_from_quote(quote_ids, emp_id):
+    if not quote_ids: return False, "未选中记录"
+    try:
+        success_count = 0
+        errors = []
+        with get_db_connection() as conn:
+            # Get data from uni_quote
+            placeholders = ','.join(['?'] * len(quote_ids))
+            rows = conn.execute(f"SELECT * FROM uni_quote WHERE quote_id IN ({placeholders})", quote_ids).fetchall()
+            
+            for row in rows:
+                data = dict(row)
+                # Pass connection to add_offer to stay in same transaction
+                ok, msg = add_offer(data, emp_id, conn=conn)
+                if ok: 
+                    success_count += 1
+                else: 
+                    errors.append(msg)
+            
+            if success_count > 0:
+                conn.commit()
+                
+        if success_count == 0 and errors:
+            return False, errors[0]
+        return True, f"成功转换 {success_count} 条记录" + (f" (失败 {len(errors)} 条)" if errors else "")
+    except Exception as e:
+        return False, str(e)

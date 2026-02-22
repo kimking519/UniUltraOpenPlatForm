@@ -9,6 +9,8 @@
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
+        <button class="btn btn-primary" onclick="batchToOffer()"
+            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转报价单</button>
         <button class="btn btn-primary" onclick="exportSelectedToOfferCsv()"
             style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为报价表.csv</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
@@ -379,6 +381,35 @@
                 });
         }
     }
+    async function batchToOffer() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要转换的需求记录');
+            return;
+        }
+
+        if (!confirm(`确定要把选中的 ${selected.length} 条需求转为报价单吗？`)) return;
+
+        try {
+            const response = await fetch('/api/quote/batch_to_offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message);
+                window.location.href = '/offer'; // Redirect to see results
+            } else {
+                alert('转换失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
     async function exportSelectedToOfferCsv() {
         const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
         if (selected.length === 0) {

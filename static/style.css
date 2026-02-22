@@ -30,6 +30,7 @@ body {
 /* Sidebar */
 .sidebar {
     width: 260px;
+    flex: 0 0 260px;
     background-color: var(--bg-side);
     color: var(--text-side);
     display: flex;
@@ -75,6 +76,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-width: 0;
 }
 
 .navbar {
@@ -129,7 +131,7 @@ body {
 .table-container {
     background: var(--card-bg);
     border-radius: var(--radius);
-    overflow: hidden;
+    overflow: auto;
     box-shadow: var(--shadow);
 }
 

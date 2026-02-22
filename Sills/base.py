@@ -107,7 +107,9 @@ def init_db():
         order_id TEXT PRIMARY KEY,
         order_date TEXT,
         cli_id TEXT NOT NULL,
-        offer_id TEXT NOT NULL,
+        offer_id TEXT,
+        inquiry_mpn TEXT,
+        inquiry_brand TEXT,
         is_finished INTEGER DEFAULT 0 CHECK(is_finished IN (0,1)),
         is_paid INTEGER DEFAULT 0 CHECK(is_paid IN (0,1)),
         paid_amount REAL DEFAULT 0.0,
@@ -140,6 +142,11 @@ def init_db():
     """
     with get_db_connection() as conn:
         conn.executescript(schema)
+        # Seed default admin if not exists
+        conn.execute("""
+            INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule) 
+            VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
+        """)
         conn.commit()
 
 def get_paginated_list(table_name, page=1, page_size=10, search_kwargs=None):

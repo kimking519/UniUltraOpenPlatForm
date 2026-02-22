@@ -8,9 +8,9 @@ from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_l
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
 from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote, batch_delete_quote
-from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer
-from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order
-from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy
+from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
+from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer
+from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 
 import uvicorn
 
@@ -414,8 +414,7 @@ async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict 
     except UnicodeDecodeError:
         text = content.decode('gbk', errors='replace').strip()
         
-    if '\n' in text:
-        text = text.split('\n', 1)[1] # skip header
+    # Pass full text to sill
     success_count, errors = batch_import_quote_text(text)
     err_msg = ""
     if errors:
@@ -557,8 +556,7 @@ async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict 
     except UnicodeDecodeError:
         text = content.decode('gbk', errors='replace').strip()
         
-    if '\n' in text:
-        text = text.split('\n', 1)[1] # skip header
+    # Pass full text to sill
     success_count, errors = batch_import_offer_text(text, current_user['emp_id'])
     err_msg = ""
     if errors:
@@ -636,32 +634,55 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
     return {"success": True, "csv_content": output.getvalue()}
 
 @app.get("/order", response_class=HTMLResponse)
-async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = ""):
-    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id)
+async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = ""):
+    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date)
     total_pages = (total + page_size - 1) // page_size
     from Sills.db_cli import get_cli_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
     return templates.TemplateResponse("order.html", {
         "request": request, "active_page": "order", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
-        "total_pages": total_pages, "search": search, "cli_id": cli_id, "cli_list": cli_list
+        "total_pages": total_pages, "search": search, "cli_id": cli_id, 
+        "start_date": start_date, "end_date": end_date, "cli_list": cli_list
     })
 
 @app.post("/order/add")
 async def order_add_route(
-    cli_id: str = Form(...), offer_id: str = Form(...), 
+    cli_id: str = Form(...), offer_id: str = Form(None), 
+    order_id: str = Form(None), order_date: str = Form(None),
+    inquiry_mpn: str = Form(None), inquiry_brand: str = Form(None),
     is_finished: int = Form(0), is_paid: int = Form(0), 
     paid_amount: float = Form(0.0), remark: str = Form(""),
     current_user: dict = Depends(login_required)
 ):
     data = {
-        "cli_id": cli_id, "offer_id": offer_id, 
+        "cli_id": cli_id, "offer_id": offer_id, "order_id": order_id, "order_date": order_date,
+        "inquiry_mpn": inquiry_mpn, "inquiry_brand": inquiry_brand,
         "is_finished": is_finished, "is_paid": is_paid, 
         "paid_amount": paid_amount, "remark": remark
     }
     ok, msg = add_order(data)
     import urllib.parse
     return RedirectResponse(url=f"/order?msg={urllib.parse.quote(msg)}&success={1 if ok else 0}", status_code=303)
+
+@app.post("/order/import")
+async def order_import_text(batch_text: str = Form(None), csv_file: UploadFile = File(None), cli_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if batch_text:
+        text = batch_text
+    elif csv_file:
+        content = await csv_file.read()
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+    else:
+        return RedirectResponse(url="/order?msg=未提供导入内容&success=0", status_code=303)
+        
+    success_count, errors = batch_import_order(text, cli_id)
+    import urllib.parse
+    err_msg = ""
+    if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/order?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/api/order/update_status")
 async def api_order_update_status(order_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
@@ -682,58 +703,125 @@ async def api_order_delete(order_id: str = Form(...), current_user: dict = Depen
     ok, msg = delete_order(order_id)
     return {"success": ok, "message": msg}
 
+@app.post("/api/order/batch_delete")
+async def api_order_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    ok, msg = batch_delete_order(ids)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/export_csv")
+async def order_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids: return {"success": False, "message": "未选择记录"}
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        orders = conn.execute(f"""
+            SELECT ord.*, c.cli_name, 
+                   COALESCE(ord.inquiry_mpn, o.inquiry_mpn) as final_mpn,
+                   COALESCE(ord.inquiry_brand, o.inquiry_brand) as final_brand
+            FROM uni_order ord 
+            LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id 
+            LEFT JOIN uni_offer o ON ord.offer_id = o.offer_id
+            WHERE ord.order_id IN ({placeholders})
+        """, ids).fetchall()
+    import io, csv
+    output = io.StringIO(); output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(['订单编号','日期','客户','报价编号','型号','品牌','完结状态','付款状态','已付金额','备注'])
+    for r in orders:
+        d = dict(r)
+        writer.writerow([d['order_id'], d['order_date'], d['cli_name'], d['offer_id'] or '', d['final_mpn'] or '', d['final_brand'] or '', d['is_finished'], d['is_paid'], d['paid_amount'], d['remark']])
+    return {"success": True, "csv_content": output.getvalue()}
+
 @app.get("/buy", response_class=HTMLResponse)
-async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = ""):
-    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id)
+async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
+    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id)
     total_pages = (total + page_size - 1) // page_size
-    from Sills.db_vendor import add_vendor # just to ensure import context if needed elsewhere, but let's get list
     with get_db_connection() as conn:
         vendors = conn.execute("SELECT vendor_id, vendor_name FROM uni_vendor").fetchall()
         orders = conn.execute("SELECT order_id FROM uni_order").fetchall()
+        clis = conn.execute("SELECT cli_id, cli_name FROM uni_cli").fetchall()
     return templates.TemplateResponse("buy.html", {
         "request": request, "active_page": "buy", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
         "total_pages": total_pages, "search": search, "order_id": order_id,
-        "vendor_list": vendors, "order_list": orders
+        "start_date": start_date, "end_date": end_date, "cli_id": cli_id,
+        "vendor_list": vendors, "order_list": orders, "cli_list": clis
     })
 
-@app.post("/buy/add")
-async def buy_add_route(
-    order_id: str = Form(...), vendor_id: str = Form(...), 
-    buy_mpn: str = Form(...), buy_brand: str = Form(""),
-    buy_price_rmb: float = Form(...), buy_qty: int = Form(...),
-    sales_price_rmb: float = Form(0.0), remark: str = Form(""),
-    current_user: dict = Depends(login_required)
-):
-    data = {
-        "order_id": order_id, "vendor_id": vendor_id, 
-        "buy_mpn": buy_mpn, "buy_brand": buy_brand,
-        "buy_price_rmb": buy_price_rmb, "buy_qty": buy_qty,
-        "sales_price_rmb": sales_price_rmb, "remark": remark
-    }
-    ok, msg = add_buy(data)
+@app.post("/buy/import")
+async def buy_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
+    success_count, errors = batch_import_buy(batch_text)
     import urllib.parse
-    return RedirectResponse(url=f"/buy?msg={urllib.parse.quote(msg)}&success={1 if ok else 0}", status_code=303)
+    err_msg = ""
+    if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/buy?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
-@app.post("/api/buy/update_node")
-async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
-    ok, msg = update_buy_node(buy_id, field, value)
+@app.post("/api/buy/batch_delete")
+async def api_buy_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    ok, msg = batch_delete_buy(ids)
     return {"success": ok, "message": msg}
 
-@app.post("/api/buy/update")
-async def api_buy_update(buy_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
-    if field in ['buy_price_rmb', 'buy_qty', 'sales_price_rmb']:
-        try: value = float(value) if 'price' in field else int(value)
-        except: return {"success": False, "message": "必须是数字"}
-    ok, msg = update_buy(buy_id, {field: value})
-    return {"success": ok, "message": msg}
+@app.post("/api/buy/export_csv")
+async def buy_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids: return {"success": False, "message": "未选择记录"}
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        buys = conn.execute(f"""
+            SELECT b.*, v.vendor_name, ord.order_id 
+            FROM uni_buy b 
+            LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id 
+            LEFT JOIN uni_order ord ON b.order_id = ord.order_id
+            WHERE b.buy_id IN ({placeholders})
+        """, ids).fetchall()
+    import io, csv
+    output = io.StringIO(); output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(['采购编号','日期','销售订单','供应商','型号','品牌','单价','数量','总额','是否货源','是否下单','是否入库','是否发货','备注'])
+    for r in buys:
+        d = dict(r)
+        writer.writerow([d['buy_id'], d['buy_date'], d['order_id'], d['vendor_name'], d['buy_mpn'], d['buy_brand'], d['buy_price_rmb'], d['buy_qty'], d['total_amount'], d['is_source_confirmed'], d['is_ordered'], d['is_instock'], d['is_shipped'], d['remark']])
+    return {"success": True, "csv_content": output.getvalue()}
+# --- New Workflow API endpoints ---
 
-@app.post("/api/buy/delete")
-async def api_buy_delete(buy_id: str = Form(...), current_user: dict = Depends(login_required)):
-    if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
-    ok, msg = delete_buy(buy_id)
-    return {"success": ok, "message": msg}
+@app.post("/api/quote/batch_to_offer")
+async def api_quote_batch_to_offer(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_quote(ids, current_user['emp_id'])
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
+@app.post("/api/offer/batch_to_order")
+async def api_offer_batch_to_order(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    cli_id = data.get('cli_id')
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_offer(ids, cli_id)
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/order/batch_to_buy")
+async def api_order_batch_to_buy(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_order(ids)
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

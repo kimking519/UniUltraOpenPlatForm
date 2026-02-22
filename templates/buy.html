@@ -2,19 +2,39 @@
 {% block content %}
 <div class="header-action">
     <h2>8. 采购管理 (uni_buy)</h2>
-    <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购记录</button>
+    <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-primary" onclick="showImportModal()">批量导入</button>
+        <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购记录</button>
+    </div>
 </div>
 
 <div class="filter-bar card"
-    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end;">
+    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+    <div>
+        <label>客户</label>
+        <select id="filter_cli" onchange="applyFilter()" style="padding: 0.4rem;">
+            <option value="">全部客户</option>
+            {% for c in cli_list %}
+            <option value="{{ c.cli_id }}" {% if cli_id==c.cli_id %}selected{% endif %}>{{ c.cli_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
     <div>
         <label>销售订单</label>
-        <select id="filter_order" onchange="applyFilter()" style="width: 180px; padding: 0.4rem;">
+        <select id="filter_order" onchange="applyFilter()" style="width: 150px; padding: 0.4rem;">
             <option value="">全部订单</option>
             {% for o in order_list %}
             <option value="{{ o.order_id }}" {% if order_id==o.order_id %}selected{% endif %}>{{ o.order_id }}</option>
             {% endfor %}
         </select>
+    </div>
+    <div>
+        <label>日期从</label>
+        <input type="date" id="start_date" value="{{ start_date }}" style="padding: 0.4rem;">
+    </div>
+    <div>
+        <label>日期至</label>
+        <input type="date" id="end_date" value="{{ end_date }}" style="padding: 0.4rem;">
     </div>
     <div>
         <label>搜索</label>
@@ -23,18 +43,24 @@
     <button class="btn btn-primary" onclick="applyFilter()">查询</button>
 </div>
 
+<div class="batch-actions" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
+    <button class="btn" onclick="batchExport()">批量导出 CSV</button>
+    <button class="btn" style="color: red;" onclick="batchDelete()">批量删除</button>
+</div>
+
 <div class="table-container">
     <table style="font-size: 0.85rem;">
         <thead>
             <tr>
+                <th><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
                 <th>采购编号</th>
                 <th>日期</th>
                 <th>对应销售单</th>
                 <th>供应商</th>
-                <th>型号/品牌</th>
+                <th>型号</th>
+                <th>品牌</th>
                 <th>单价 / 数量</th>
                 <th>总额 (RMB)</th>
-                <th>销售价</th>
                 <th>业务流程节点</th>
                 <th>操作</th>
             </tr>
@@ -42,14 +68,17 @@
         <tbody>
             {% for item in items %}
             <tr data-id="{{ item.buy_id }}">
+                <td><input type="checkbox" class="row-checkbox" value="{{ item.buy_id }}"></td>
                 <td>{{ item.buy_id }}</td>
                 <td>{{ item.buy_date }}</td>
                 <td>{{ item.order_id }}</td>
                 <td>{{ item.vendor_name }}</td>
-                <td>{{ item.buy_mpn }} / {{ item.buy_brand }}</td>
+                <td onclick="editField('{{ item.buy_id }}', 'buy_mpn', '{{ item.buy_mpn }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ item.buy_mpn }}</td>
+                <td onclick="editField('{{ item.buy_id }}', 'buy_brand', '{{ item.buy_brand }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ item.buy_brand }}</td>
                 <td><span style="color:var(--primary)">{{ item.buy_price_rmb }}</span> x {{ item.buy_qty }}</td>
                 <td style="font-weight: 700;">{{ item.total_amount }}</td>
-                <td>{{ item.sales_price_rmb }}</td>
                 <td>
                     <div class="status-nodes">
                         <div class="node {% if item.is_source_confirmed %}active{% endif %}" title="货源确认">
@@ -86,12 +115,14 @@
 
 <div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
     {% if page is defined and page > 1 %}
-    <a href="/buy?page={{ page-1 }}&search={{ search }}&order_id={{ order_id }}" class="btn">上一页</a>
+    <a href="/buy?page={{ page-1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="btn">上一页</a>
     {% endif %}
     <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
         total is defined else 0 }} 条)</span>
     {% if page is defined and total_pages is defined and page < total_pages %} <a
-        href="/buy?page={{ page+1 }}&search={{ search }}&order_id={{ order_id }}" class="btn">下一页</a>
+        href="/buy?page={{ page+1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="btn">下一页</a>
         {% endif %}
 </div>
 
@@ -156,14 +187,80 @@
     </div>
 </div>
 
+<!-- Import Modal -->
+<div id="importModal" class="modal"
+    style="display:none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);">
+    <div class="modal-content card" style="width: 600px; margin: 10% auto; padding: 2rem;">
+        <h3>批量导入采购记录 (支持销售订单 CSV 内容)</h3>
+        <form action="/buy/import" method="post" style="margin-top: 1rem;">
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 0.5rem;">映射规则：订单编号(0), 型号(4), 品牌(5), 备注(9)</p>
+            <textarea name="batch_text" placeholder="销售订单编号,日期,客户,报价编号,型号,品牌,完结状态,付款状态,已付金额,备注"
+                style="width: 100%; height: 200px; padding: 0.5rem;"></textarea>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">开始导入</button>
+                <button type="button" class="btn" onclick="hideImportModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     function showAddModal() { document.getElementById('addModal').style.display = 'block'; }
     function hideAddModal() { document.getElementById('addModal').style.display = 'none'; }
+    function showImportModal() { document.getElementById('importModal').style.display = 'block'; }
+    function hideImportModal() { document.getElementById('importModal').style.display = 'none'; }
 
     function applyFilter() {
+        const cli = document.getElementById('filter_cli').value;
         const ord = document.getElementById('filter_order').value;
         const search = document.getElementById('search_input').value;
-        window.location.href = `/buy?order_id=${ord}&search=${search}`;
+        const start = document.getElementById('start_date').value;
+        const end = document.getElementById('end_date').value;
+        window.location.href = `/buy?order_id=${ord}&cli_id=${cli}&search=${search}&start_date=${start}&end_date=${end}`;
+    }
+
+    function toggleSelectAll(checked) {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checked);
+    }
+
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+    }
+
+    async function batchDelete() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要删除的记录');
+        if (!confirm(`确定删除选中的 ${ids.length} 个采购记录吗？`)) return;
+
+        const resp = await fetch('/api/buy/batch_delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    async function batchExport() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要导出的记录');
+
+        const resp = await fetch('/api/buy/export_csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            const blob = new Blob([res.csv_content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `buy_export_${new Date().getTime()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else alert(res.message);
     }
 
     function calcTotal() {
@@ -182,7 +279,6 @@
         const res = await resp.json();
         if (!res.success) alert(res.message);
         else {
-            // Find node div and toggle active class
             const row = document.querySelector(`tr[data-id="${buyId}"]`);
             if (row) {
                 const nodeDiv = row.querySelector(`input[onchange*="${field}"]`).parentElement;
@@ -190,6 +286,21 @@
                 else nodeDiv.classList.remove('active');
             }
         }
+    }
+
+    async function editField(buyId, field, currentVal) {
+        const newVal = prompt(`修改 ${field}:`, currentVal);
+        if (newVal === null || newVal === currentVal) return;
+
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', field);
+        formData.append('value', newVal);
+
+        const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
     }
 
     async function deleteBuy(buyId) {
