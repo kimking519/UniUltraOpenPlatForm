@@ -1,57 +1,99 @@
 ---
 name: sale-input-needs
-description: 自动根据聊天记录提取电子零组件采购需求并录入到 UniUltra 平台的“需求管理”模块。
+description: 自动从销售聊天、邮件或日常笔记中提取电子元组件需求（MPN、数量、价格、客户），并快速录入 UniUltra 平台的“需求管理”表。适用于快速处理非结构化询价信息。
 ---
 
-# Skill: sale-input-needs
+# Sale Input Needs
 
-这个 Skill 旨在协助销售人员快速从分散的聊天记录、邮件或口头描述中提取结构化的电子元组件需求，并利用系统的 API 自动将其录入到 `uni_quote`（需求管理）表中。
+`sale-input-needs` 是一个专为销售团队设计的自动化工具，它能通过自然语言处理能力将口头或文字的需求描述快速转化为系统内的询价记录。
 
-## 指令建议
+## When to Use
 
-当用户提供类似于“帮我把这些录进去：客户 C001 要 1000 个 STM32F103C8T6，品牌 st，目标价 5 块左右，备注急需”的信息时，你应该启动此 Skill。
+在以下场景使用此 Skill：
+- 从微信聊天记录中快速抓取客户发来的询价单
+- 将邮件中的零件列表快速导入系统，而无需逐条手动录入
+- 在与客户通话后，通过简短的文字总结快速归档需求
+- 处理包含多个型号和不同客户的复杂询价信息
 
-## 处理流程
+## Prerequisites
 
-1. **信息提取**：从用户的原始输入中识别出以下关键字段：
-   - `cli_id` (客户 ID，必填)
-   - `inquiry_mpn` (询价型号，必填)
-   - `inquiry_brand` (品牌)
-   - `inquiry_qty` (数量)
-   - `target_price_rmb` (客户目标单价)
-   - `remark` (备注)
+此 Skill 依赖 Python 及 `requests` 库来与 UniUltra API 交互：
 
-2. **数据标准化**：
-   - 型号应转换为大写（如 `stm32` -> `STM32`）。
-   - 数量应转换为整数。
-   - 价格应转换为浮点数。
-
-3. **执行录入**：
-   - 你可以使用 `run_command` 调用 Python 脚本或直接利用 `curl` 请求平台的 `/quote/add` 接口（如果已知本地地址为 `http://127.0.0.1:8000`）。
-   - 或者，更优雅的方式是通过 `batch_import_quote_text` 逻辑，构造 CSV 格式的文本进行批量导入。
-
-## 系统映射参考 (uni_quote 表)
-
-| 字段名 | 含义 | 类型 | 录入建议 |
-| :--- | :--- | :--- | :--- |
-| `cli_id` | 客户编号 | TEXT | 必须匹配 `uni_cli` 中的 ID |
-| `inquiry_mpn` | 询价型号 | TEXT | 原始型号 |
-| `inquiry_brand` | 品牌 | TEXT | 建议大写 |
-| `inquiry_qty` | 数量 | INTEGER | 默认 0 |
-| `target_price_rmb`| 目标价 | REAL | 默认 0.0 |
-| `remark` | 备注 | TEXT | 来源或特殊要求 |
-
-## 示例脚本 (scripts/auto_input.py)
-
-你可以调用预置在 `scripts/` 下的脚本来执行动作。
-
-```python
-# 示例调用
-python scripts/auto_input.py --cli_id "C001" --mpn "TPS54331DR" --qty 500
+```bash
+# 安装依赖
+pip install requests
 ```
 
-## 注意事项
+确保 UniUltra 平台已启动（默认地址：`http://127.0.0.1:8000`）。
 
-- **多项录入**：如果对话中包含多个型号，应逐一提取并批量导入。
-- **校验**：录入前应确认 `cli_id` 是否存在（可以通过搜索 `uni_cli` 表确认）。
-- **反馈**：录入成功后，向用户反馈已生成的“需求编号”（格式如 Q20260223...）。
+## Quick Start
+
+### 1. 识别需求数据
+
+从用户输入中提取以下结构化信息：
+- **cli_id**: 客户 ID（如 C001）
+- **mpn**: 型号（必须为大写，如 TPS54331DR）
+- **qty**: 需求数量
+- **brand**: 指定品牌（可选）
+- **price**: 客户目标价（可选）
+- **remark**: 备注信息
+
+### 2. 执行自动化录入
+
+使用预置脚本提交数据：
+
+```bash
+python openclaw_skills/sale-input-needs/scripts/auto_input.py --cli_id "C001" --mpn "STM32F103" --qty 1000
+```
+
+## Search & Mapping (查找映射)
+
+在录入前，可以先查询客户 ID 以确保正确：
+
+```bash
+# 查询客户列表以获取正确的 cli_id
+# 建议通过 OpenClaw 检索 cli 表
+```
+
+## For AI Agents
+
+此 Skill 为 AI Agent 提供了标准化的数据处理协议：
+
+```bash
+# 提取多个型号时的处理逻辑：
+# 1. 将复杂段落分解为独立的条目列表
+# 2. 依次调用 auto_input.py 脚本
+# 3. 汇总所有成功录入的需求编号（如 Q2026xxxx）并反馈给用户
+```
+
+## Workflow (工作流)
+
+```
+1. 接收输入 → 销售粘贴聊天记录或描述
+2. 数据建模 → 提取 (mpn, qty, price, cli_id)
+3. 校验数据 → 转换型号为全大写，确保 cli_id 有效
+4. 运行脚本 → 通过 auto_input.py 向后端发送请求
+5. 结果反馈 → 返回已生成的 Q 编号并在系统内确认
+```
+
+## Tips
+
+- **型号纠错**：电子行业型号对字母非常敏感，录入前请务必去除多余的空格并转换为大写。
+- **缺失客户**：如果用户未指定客户名，请先询问或在 `uni_cli` 中模糊搜索。
+- **批量处理**：如果聊天记录包含多个型号（如“A型号要100，B型号要200”），请循环调用录入命令。
+
+## Troubleshooting
+
+**Issue:** 连接被拒绝 (Connection Refused)  
+**Fix:** 确保 Fast API 服务正在运行，且 `base_url` 正确。
+
+**Issue:** 客户 ID 不存在  
+**Fix:** 请先在“客户管理”模块创建客户，或使用已有的有效 ID（如 C001, C002）。
+
+**Issue:** 录入成功但页面未刷新  
+**Fix:** 脚本完成后请手动刷新 `/quote` 页面查看最新记录。
+
+## References
+
+- 核心脚本位置: `openclaw_skills/sale-input-needs/scripts/auto_input.py`
+- 原始数据表: `uni_quote`
