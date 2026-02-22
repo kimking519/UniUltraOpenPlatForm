@@ -1,9 +1,8 @@
-```html
 {% extends "layout.html" %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-    <h1>2. 员工管理 (uni_emp)</h1>
+<div class="header-action">
+    <h2>2. 员工管理 (uni_emp)</h2>
     {% if current_user.rule == '3' %}
     <div style="display: flex; gap: 1rem;">
         <button class="btn" style="background: var(--secondary); color: white;"
@@ -14,11 +13,15 @@
 </div>
 
 <!-- Search Bar -->
-<div class="card" style="margin-bottom: 2rem;">
-    <form action="/emp" method="get" style="display: flex; gap: 1rem;">
-        <input type="text" name="search" value="{{ search }}" placeholder="搜索姓名或账号..."
-            style="flex: 1; padding: 0.8rem; border: 1px solid var(--border); border-radius: 8px;">
-        <button type="submit" class="btn btn-primary">搜索</button>
+<div class="filter-bar card"
+    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+    <form action="/emp" method="get" style="display: flex; gap: 1rem; width: 100%;">
+        <div style="flex: 1;">
+            <label>搜索</label>
+            <input type="text" name="search" value="{{ search }}" placeholder="搜索姓名或账号..."
+                style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: 4px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="height: fit-content;">查询</button>
     </form>
 </div>
 
@@ -58,8 +61,14 @@
                 </td>
                 <td {% if current_user.rule=='3' or current_user.rule=='0'
                     %}ondblclick="makeEditable(this, '{{ item.emp_id }}', 'rule')" {% endif %}><span
-                        style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">{{
-                        item.rule }}</span></td>
+                        style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        {% if item.rule == 0 or item.rule == '0' %}读写
+                        {% elif item.rule == 1 or item.rule == '1' %}只读
+                        {% elif item.rule == 2 or item.rule == '2' %}采购专员
+                        {% elif item.rule == 3 or item.rule == '3' %}管理员
+                        {% elif item.rule == 4 or item.rule == '4' %}黑名单
+                        {% else %}{{ item.rule }}{% endif %}
+                    </span></td>
                 <td {% if current_user.rule=='3' or current_user.rule=='0'
                     %}ondblclick="makeEditable(this, '{{ item.emp_id }}', 'contact')" {% endif %}>{{ item.contact }}
                 </td>
@@ -241,4 +250,3 @@
     }
 </script>
 {% endblock %}
-```
