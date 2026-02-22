@@ -1,0 +1,205 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="header-action">
+    <h2>8. 采购管理 (uni_buy)</h2>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购记录</button>
+</div>
+
+<div class="filter-bar card"
+    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end;">
+    <div>
+        <label>销售订单</label>
+        <select id="filter_order" onchange="applyFilter()" style="width: 180px; padding: 0.4rem;">
+            <option value="">全部订单</option>
+            {% for o in order_list %}
+            <option value="{{ o.order_id }}" {% if order_id==o.order_id %}selected{% endif %}>{{ o.order_id }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label>搜索</label>
+        <input type="text" id="search_input" value="{{ search }}" placeholder="采购单/型号/供应商..." style="padding: 0.4rem;">
+    </div>
+    <button class="btn btn-primary" onclick="applyFilter()">查询</button>
+</div>
+
+<div class="table-container">
+    <table style="font-size: 0.85rem;">
+        <thead>
+            <tr>
+                <th>采购编号</th>
+                <th>日期</th>
+                <th>对应销售单</th>
+                <th>供应商</th>
+                <th>型号/品牌</th>
+                <th>单价 / 数量</th>
+                <th>总额 (RMB)</th>
+                <th>销售价</th>
+                <th>业务流程节点</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr data-id="{{ item.buy_id }}">
+                <td>{{ item.buy_id }}</td>
+                <td>{{ item.buy_date }}</td>
+                <td>{{ item.order_id }}</td>
+                <td>{{ item.vendor_name }}</td>
+                <td>{{ item.buy_mpn }} / {{ item.buy_brand }}</td>
+                <td><span style="color:var(--primary)">{{ item.buy_price_rmb }}</span> x {{ item.buy_qty }}</td>
+                <td style="font-weight: 700;">{{ item.total_amount }}</td>
+                <td>{{ item.sales_price_rmb }}</td>
+                <td>
+                    <div class="status-nodes">
+                        <div class="node {% if item.is_source_confirmed %}active{% endif %}" title="货源确认">
+                            <input type="checkbox" {% if item.is_source_confirmed %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_source_confirmed', this.checked)">
+                            <span>货源</span>
+                        </div>
+                        <div class="node {% if item.is_ordered %}active{% endif %}" title="下单确认">
+                            <input type="checkbox" {% if item.is_ordered %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_ordered', this.checked)">
+                            <span>下单</span>
+                        </div>
+                        <div class="node {% if item.is_instock %}active{% endif %}" title="入库确认">
+                            <input type="checkbox" {% if item.is_instock %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_instock', this.checked)">
+                            <span>入库</span>
+                        </div>
+                        <div class="node {% if item.is_shipped %}active{% endif %}" title="发货确认">
+                            <input type="checkbox" {% if item.is_shipped %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_shipped', this.checked)">
+                            <span>发货</span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <button class="btn" style="color: red; padding: 2px 8px;"
+                        onclick="deleteBuy('{{ item.buy_id }}')">删除</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
+    {% if page is defined and page > 1 %}
+    <a href="/buy?page={{ page-1 }}&search={{ search }}&order_id={{ order_id }}" class="btn">上一页</a>
+    {% endif %}
+    <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
+        total is defined else 0 }} 条)</span>
+    {% if page is defined and total_pages is defined and page < total_pages %} <a
+        href="/buy?page={{ page+1 }}&search={{ search }}&order_id={{ order_id }}" class="btn">下一页</a>
+        {% endif %}
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal"
+    style="display:none; position: fixed; z-index: 1010; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); overflow-y: auto;">
+    <div class="modal-content card" style="width: 500px; margin: 5% auto; padding: 2rem;">
+        <h3>新增采购记录</h3>
+        <form action="/buy/add" method="post" id="buyForm"
+            style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+            <div style="grid-column: span 2;">
+                <label>对应销售订单</label><br>
+                <select name="order_id" required style="width: 100%; padding: 0.5rem;">
+                    {% for o in order_list %}
+                    <option value="{{ o.order_id }}">{{ o.order_id }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="grid-column: span 2;">
+                <label>供应商</label><br>
+                <select name="vendor_id" required style="width: 100%; padding: 0.5rem;">
+                    {% for v in vendor_list %}
+                    <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>采购型号</label><br>
+                <input type="text" name="buy_mpn" required style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>品牌</label><br>
+                <input type="text" name="buy_brand" style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购单价 (RMB)</label><br>
+                <input type="number" step="0.0001" name="buy_price_rmb" id="in_price" oninput="calcTotal()" required
+                    style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购数量</label><br>
+                <input type="number" name="buy_qty" id="in_qty" oninput="calcTotal()" required
+                    style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购总额</label><br>
+                <input type="text" id="out_total" readonly style="width: 100%; padding: 0.5rem; background: #f1f1f1;">
+            </div>
+            <div>
+                <label>销售价 (RMB)</label><br>
+                <input type="number" step="0.0001" name="sales_price_rmb" style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div style="grid-column: span 2;">
+                <label>备注</label><br>
+                <textarea name="remark" style="width: 100%; padding: 0.5rem;"></textarea>
+            </div>
+            <div style="grid-column: span 2; display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">提交</button>
+                <button type="button" class="btn" onclick="hideAddModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function showAddModal() { document.getElementById('addModal').style.display = 'block'; }
+    function hideAddModal() { document.getElementById('addModal').style.display = 'none'; }
+
+    function applyFilter() {
+        const ord = document.getElementById('filter_order').value;
+        const search = document.getElementById('search_input').value;
+        window.location.href = `/buy?order_id=${ord}&search=${search}`;
+    }
+
+    function calcTotal() {
+        const p = parseFloat(document.getElementById('in_price').value) || 0;
+        const q = parseInt(document.getElementById('in_qty').value) || 0;
+        document.getElementById('out_total').value = (p * q).toFixed(2);
+    }
+
+    async function toggleNode(buyId, field, value) {
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', field);
+        formData.append('value', value ? 1 : 0);
+
+        const resp = await fetch('/api/buy/update_node', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (!res.success) alert(res.message);
+        else {
+            // Find node div and toggle active class
+            const row = document.querySelector(`tr[data-id="${buyId}"]`);
+            if (row) {
+                const nodeDiv = row.querySelector(`input[onchange*="${field}"]`).parentElement;
+                if (value) nodeDiv.classList.add('active');
+                else nodeDiv.classList.remove('active');
+            }
+        }
+    }
+
+    async function deleteBuy(buyId) {
+        if (!confirm('确定删除采购记录 ' + buyId + ' 吗？')) return;
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        const resp = await fetch('/api/buy/delete', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+</script>
+{% endblock %}

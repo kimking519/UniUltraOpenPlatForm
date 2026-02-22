@@ -1,0 +1,173 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="header-action">
+    <h2>7. 销售订单管理 (uni_order)</h2>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 新增销售订单</button>
+</div>
+
+<div class="filter-bar card"
+    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end;">
+    <div>
+        <label>客户</label>
+        <select id="filter_cli" onchange="applyFilter()" style="width: 150px; padding: 0.4rem;">
+            <option value="">全部客户</option>
+            {% for c in cli_list %}
+            <option value="{{ c.cli_id }}" {% if cli_id==c.cli_id %}selected{% endif %}>{{ c.cli_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label>搜索</label>
+        <input type="text" id="search_input" value="{{ search }}" placeholder="订单号/型号..." style="padding: 0.4rem;">
+    </div>
+    <button class="btn btn-primary" onclick="applyFilter()">查询</button>
+</div>
+
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>订单编号</th>
+                <th>日期</th>
+                <th>客户</th>
+                <th>报价/需求编号</th>
+                <th>型号</th>
+                <th>完结状态</th>
+                <th>付款状态</th>
+                <th>已付金额</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr data-id="{{ item.order_id }}">
+                <td>{{ item.order_id }}</td>
+                <td>{{ item.order_date }}</td>
+                <td>{{ item.cli_name }}</td>
+                <td>{{ item.offer_id or item.quote_id }}</td>
+                <td>{{ item.inquiry_mpn }}</td>
+                <td>
+                    <label class="switch">
+                        <input type="checkbox" {% if item.is_finished==1 %}checked{% endif %}
+                            onchange="toggleStatus('{{ item.order_id }}', 'is_finished', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+                <td>
+                    <label class="switch">
+                        <input type="checkbox" {% if item.is_paid==1 %}checked{% endif %}
+                            onchange="toggleStatus('{{ item.order_id }}', 'is_paid', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+                <td onclick="editField('{{ item.order_id }}', 'paid_amount', '{{ item.paid_amount }}')"
+                    style="cursor: pointer; color: var(--primary);">
+                    {{ item.paid_amount }}
+                </td>
+                <td onclick="editField('{{ item.order_id }}', 'remark', '{{ item.remark }}')" style="cursor: pointer;">
+                    {{ item.remark }}
+                </td>
+                <td>
+                    <button class="btn" style="color: red; padding: 2px 8px;"
+                        onclick="deleteOrder('{{ item.order_id }}')">删除</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
+    {% if page is defined and page > 1 %}
+    <a href="/order?page={{ page-1 }}&search={{ search }}&cli_id={{ cli_id }}" class="btn">上一页</a>
+    {% endif %}
+    <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
+        total is defined else 0 }} 条)</span>
+    {% if page is defined and total_pages is defined and page < total_pages %} <a
+        href="/order?page={{ page+1 }}&search={{ search }}&cli_id={{ cli_id }}" class="btn">下一页</a>
+        {% endif %}
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal"
+    style="display:none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);">
+    <div class="modal-content card" style="width: 450px; margin: 10% auto; padding: 2rem;">
+        <h3>新增销售订单</h3>
+        <form action="/order/add" method="post"
+            style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+            <div>
+                <label>客户</label><br>
+                <select name="cli_id" required style="width: 100%; padding: 0.5rem;">
+                    {% for c in cli_list %}
+                    <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>关联报价/需求编号 (Offer/Quote ID)</label><br>
+                <input type="text" name="offer_id" required style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>已付金额</label><br>
+                <input type="number" step="0.01" name="paid_amount" value="0.0" style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>备注</label><br>
+                <textarea name="remark" style="width: 100%; padding: 0.5rem;"></textarea>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">提交</button>
+                <button type="button" class="btn" onclick="hideAddModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function showAddModal() { document.getElementById('addModal').style.display = 'block'; }
+    function hideAddModal() { document.getElementById('addModal').style.display = 'none'; }
+
+    function applyFilter() {
+        const cli = document.getElementById('filter_cli').value;
+        const search = document.getElementById('search_input').value;
+        window.location.href = `/order?cli_id=${cli}&search=${search}`;
+    }
+
+    async function toggleStatus(orderId, field, value) {
+        const formData = new FormData();
+        formData.append('order_id', orderId);
+        formData.append('field', field);
+        formData.append('value', value ? 1 : 0);
+
+        const resp = await fetch('/api/order/update_status', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (!res.success) alert(res.message);
+    }
+
+    async function editField(orderId, field, currentVal) {
+        const newVal = prompt(`修改 ${field}:`, currentVal);
+        if (newVal === null || newVal === currentVal) return;
+
+        const formData = new FormData();
+        formData.append('order_id', orderId);
+        formData.append('field', field);
+        formData.append('value', newVal);
+
+        const resp = await fetch('/api/order/update', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    async function deleteOrder(orderId) {
+        if (!confirm('确定删除订单 ' + orderId + ' 吗？')) return;
+        const formData = new FormData();
+        formData.append('order_id', orderId);
+        const resp = await fetch('/api/order/delete', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+</script>
+{% endblock %}

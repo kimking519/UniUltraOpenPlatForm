@@ -9,6 +9,9 @@ from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor,
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
 from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote, batch_delete_quote
 from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer
+from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order
+from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy
+
 import uvicorn
 
 app = FastAPI()
@@ -633,12 +636,104 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
     return {"success": True, "csv_content": output.getvalue()}
 
 @app.get("/order", response_class=HTMLResponse)
-async def order_page(request: Request, current_user: dict = Depends(login_required)):
-    return templates.TemplateResponse("order.html", {"request": request, "active_page": "order", "current_user": current_user})
+async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = ""):
+    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.db_cli import get_cli_list
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    return templates.TemplateResponse("order.html", {
+        "request": request, "active_page": "order", "current_user": current_user,
+        "items": results, "total": total, "page": page, "page_size": page_size,
+        "total_pages": total_pages, "search": search, "cli_id": cli_id, "cli_list": cli_list
+    })
+
+@app.post("/order/add")
+async def order_add_route(
+    cli_id: str = Form(...), offer_id: str = Form(...), 
+    is_finished: int = Form(0), is_paid: int = Form(0), 
+    paid_amount: float = Form(0.0), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "cli_id": cli_id, "offer_id": offer_id, 
+        "is_finished": is_finished, "is_paid": is_paid, 
+        "paid_amount": paid_amount, "remark": remark
+    }
+    ok, msg = add_order(data)
+    import urllib.parse
+    return RedirectResponse(url=f"/order?msg={urllib.parse.quote(msg)}&success={1 if ok else 0}", status_code=303)
+
+@app.post("/api/order/update_status")
+async def api_order_update_status(order_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = update_order_status(order_id, field, value)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/update")
+async def api_order_update(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if field in ['paid_amount']:
+        try: value = float(value)
+        except: return {"success": False, "message": "必须是数字"}
+    ok, msg = update_order(order_id, {field: value})
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/delete")
+async def api_order_delete(order_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
+    ok, msg = delete_order(order_id)
+    return {"success": ok, "message": msg}
 
 @app.get("/buy", response_class=HTMLResponse)
-async def buy_page(request: Request, current_user: dict = Depends(login_required)):
-    return templates.TemplateResponse("buy.html", {"request": request, "active_page": "buy", "current_user": current_user})
+async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = ""):
+    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.db_vendor import add_vendor # just to ensure import context if needed elsewhere, but let's get list
+    with get_db_connection() as conn:
+        vendors = conn.execute("SELECT vendor_id, vendor_name FROM uni_vendor").fetchall()
+        orders = conn.execute("SELECT order_id FROM uni_order").fetchall()
+    return templates.TemplateResponse("buy.html", {
+        "request": request, "active_page": "buy", "current_user": current_user,
+        "items": results, "total": total, "page": page, "page_size": page_size,
+        "total_pages": total_pages, "search": search, "order_id": order_id,
+        "vendor_list": vendors, "order_list": orders
+    })
+
+@app.post("/buy/add")
+async def buy_add_route(
+    order_id: str = Form(...), vendor_id: str = Form(...), 
+    buy_mpn: str = Form(...), buy_brand: str = Form(""),
+    buy_price_rmb: float = Form(...), buy_qty: int = Form(...),
+    sales_price_rmb: float = Form(0.0), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "order_id": order_id, "vendor_id": vendor_id, 
+        "buy_mpn": buy_mpn, "buy_brand": buy_brand,
+        "buy_price_rmb": buy_price_rmb, "buy_qty": buy_qty,
+        "sales_price_rmb": sales_price_rmb, "remark": remark
+    }
+    ok, msg = add_buy(data)
+    import urllib.parse
+    return RedirectResponse(url=f"/buy?msg={urllib.parse.quote(msg)}&success={1 if ok else 0}", status_code=303)
+
+@app.post("/api/buy/update_node")
+async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = update_buy_node(buy_id, field, value)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/update")
+async def api_buy_update(buy_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if field in ['buy_price_rmb', 'buy_qty', 'sales_price_rmb']:
+        try: value = float(value) if 'price' in field else int(value)
+        except: return {"success": False, "message": "必须是数字"}
+    ok, msg = update_buy(buy_id, {field: value})
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/delete")
+async def api_buy_delete(buy_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
+    ok, msg = delete_buy(buy_id)
+    return {"success": ok, "message": msg}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
