@@ -7,7 +7,7 @@ from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
-from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, update_quote, delete_quote, batch_delete_quote
+from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, delete_quote, update_quote, batch_delete_quote, batch_copy_quote
 from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
 from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
@@ -200,7 +200,7 @@ async def emp_update_api(emp_id: str = Form(...), field: str = Form(...), value:
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无权限"}
     # Only allow certain fields
-    allowed_fields = ['account', 'department', 'position', 'rule', 'contact', 'hire_date', 'remark']
+    allowed_fields = ['emp_name', 'account', 'password', 'department', 'position', 'rule', 'contact', 'hire_date', 'remark']
     if field not in allowed_fields:
         return {"success": False, "message": "非法字段"}
     
@@ -456,6 +456,15 @@ async def quote_batch_delete_api(request: Request, current_user: dict = Depends(
     data = await request.json()
     ids = data.get("ids", [])
     success, msg = batch_delete_quote(ids)
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/batch_copy")
+async def quote_batch_copy_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限复制需求"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_copy_quote(ids)
     return {"success": success, "message": msg}
 
 @app.get("/api/quote/info")

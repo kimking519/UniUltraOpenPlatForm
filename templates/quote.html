@@ -2,13 +2,15 @@
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-    <h1>4. 需求管理 (uni_quote)</h1>
+    <h1>4. 需求管理</h1>
     {% if current_user.rule == '3' or current_user.rule == '0' %}
     <div style="display: flex; gap: 1rem;">
         {% if current_user.rule == '3' %}
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
+        <button class="btn btn-primary" onclick="batchCopy()"
+            style="background: #a855f7; color: white; border: 1px solid #a855f7;">批量复制</button>
         <button class="btn btn-primary" onclick="batchToOffer()"
             style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转报价单</button>
         <button class="btn btn-primary" onclick="exportSelectedToOfferCsv()"
@@ -442,6 +444,26 @@
         } catch (error) {
             console.error('Error:', error);
             alert('请求失败，请稍后重试');
+        }
+    }
+
+    function batchCopy() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要复制的记录');
+            return;
+        }
+        if (confirm(`确定要复制选中的 ${selected.length} 条记录吗？`)) {
+            fetch('/api/quote/batch_copy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('批量复制失败: ' + data.message);
+                });
         }
     }
 </script>

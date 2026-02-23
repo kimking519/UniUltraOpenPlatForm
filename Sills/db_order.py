@@ -27,14 +27,36 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
         params.append(int(is_finished))
 
     count_sql = "SELECT COUNT(*) " + query
-    data_sql = "SELECT o.*, c.cli_name, off.quoted_mpn " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"
+    data_sql = "SELECT o.*, c.cli_name, c.margin_rate, off.quoted_mpn, off.offer_price_rmb " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"
     params_with_limit = params + [page_size, offset]
 
     with get_db_connection() as conn:
         total = conn.execute(count_sql, params).fetchone()[0]
         rows = conn.execute(data_sql, params_with_limit).fetchall()
         
-    results = [dict(r) for r in rows]
+        results = [dict(r) for r in rows]
+        
+        try:
+            rate_krw = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_val = float(rate_krw[0]) if rate_krw else 180.0
+            usd_val = float(rate_usd[0]) if rate_usd else 7.0
+            
+            for r in results:
+                price = r.get('offer_price_rmb') or r.get('sales_price_rmb') or 0.0
+                margin = float(r.get('margin_rate') or 0.0)
+                final_price = float(price) * (1 + margin / 100.0)
+                
+                if krw_val > 10: r['price_kwr'] = round(final_price * krw_val, 2)
+                else: r['price_kwr'] = round(final_price / krw_val, 2) if krw_val else 0.0
+                    
+                if usd_val > 10: r['price_usd'] = round(final_price * usd_val, 2)
+                else: r['price_usd'] = round(final_price / usd_val, 2) if usd_val else 0.0
+        except Exception as e:
+            for r in results:
+                r['price_kwr'] = 0.0
+                r['price_usd'] = 0.0
+
     return results, total
 
 def add_order(data, conn=None):
@@ -205,6 +227,8 @@ def batch_delete_order(order_ids):
             conn.commit()
             return True, "批量删除成功"
     except Exception as e:
+        if "FOREIGN KEY constraint failed" in str(e):
+            return False, "删除失败：部分记录已被[采购记录]引用，无法直接删除。"
         return False, str(e)
 
 def update_order_status(order_id, field, value):
@@ -246,4 +270,6 @@ def delete_order(order_id):
             conn.commit()
             return True, "删除成功"
     except Exception as e:
+        if "FOREIGN KEY constraint failed" in str(e):
+            return False, "删除失败：记录已被[采购记录]引用，无法直接删除。"
         return False, str(e)

@@ -11,6 +11,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     LEFT JOIN uni_order ord ON b.order_id = ord.order_id
     LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id
     LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
+    LEFT JOIN uni_offer off ON ord.offer_id = off.offer_id
     WHERE (b.buy_id LIKE ? OR b.buy_mpn LIKE ? OR v.vendor_name LIKE ?)
     """
     params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
@@ -32,7 +33,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
         params.append(int(is_shipped))
         
     query = f"""
-    SELECT b.*, ord.order_id, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name
+    SELECT b.*, ord.order_id, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name, c.margin_rate, off.offer_price_rmb
     {base_query}
     ORDER BY b.created_at DESC
     LIMIT ? OFFSET ?
@@ -47,8 +48,28 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
         results = []
         for row in items:
             d = dict(row)
-            # Ensure price and qty are numbers for calculation if needed later
             results.append({k: ("" if v is None else v) for k, v in d.items()})
+            
+        try:
+            rate_krw = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_val = float(rate_krw[0]) if rate_krw else 180.0
+            usd_val = float(rate_usd[0]) if rate_usd else 7.0
+            
+            for r in results:
+                price = r.get('offer_price_rmb') or 0.0
+                margin = float(r.get('margin_rate') or 0.0)
+                final_price = float(price) * (1 + margin / 100.0)
+                
+                if krw_val > 10: r['price_kwr'] = round(final_price * krw_val, 2)
+                else: r['price_kwr'] = round(final_price / krw_val, 2) if krw_val else 0.0
+                    
+                if usd_val > 10: r['price_usd'] = round(final_price * usd_val, 2)
+                else: r['price_usd'] = round(final_price / usd_val, 2) if usd_val else 0.0
+        except Exception as e:
+            for r in results:
+                r['price_kwr'] = 0.0
+                r['price_usd'] = 0.0
             
         return results, total
 

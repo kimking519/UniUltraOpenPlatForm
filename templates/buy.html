@@ -1,10 +1,15 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="header-action">
-    <h2>8. 采购管理 (uni_buy)</h2>
-    <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-primary" onclick="showImportModal()">批量导入</button>
-        <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购记录</button>
+    <h1>7. 采购管理</h1>
+    <div style="display: flex; gap: 1rem;">
+        <button class="btn btn-primary" onclick="batchDelete()"
+            style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
+        <button class="btn btn-primary" onclick="batchExport()"
+            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为.csv</button>
+        <button class="btn btn-primary" onclick="showImportModal()"
+            style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
+        <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购单</button>
     </div>
 </div>
 
@@ -70,7 +75,9 @@
                 <th>供应商地址</th>
                 <th>型号</th>
                 <th>品牌</th>
-                <th>采购单价 (RMB)</th>
+                <th>采购单价(RMB)</th>
+                <th>报价(KWR)</th>
+                <th>报价(USD)</th>
                 <th>数量</th>
                 <th>总额 (RMB)</th>
                 <th>业务流程节点</th>
@@ -97,6 +104,8 @@
                     style="cursor: pointer; color: var(--primary);">{{ item.buy_brand }}</td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_price_rmb', '{{ item.buy_price_rmb }}')"
                     style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_price_rmb }}</td>
+                <td><span style="color:var(--primary);">{{ item.price_kwr }}</span></td>
+                <td><span style="color:var(--primary);">{{ item.price_usd }}</span></td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_qty', '{{ item.buy_qty }}')"
                     style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_qty }}</td>
                 <td style="font-weight: 700;">{{ item.total_amount }}</td>

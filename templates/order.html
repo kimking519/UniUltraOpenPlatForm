@@ -1,12 +1,17 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="header-action">
-    <h2>7. 销售订单管理 (uni_order)</h2>
-    <div style="display: flex; gap: 0.5rem;">
+    <h1>6. 销售订单管理</h1>
+    <div style="display: flex; gap: 1rem;">
         <button class="btn btn-primary" onclick="batchToBuy()"
-            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转采购</button>
-        <button class="btn btn-primary" onclick="showImportModal()">批量导入</button>
-        <button class="btn btn-primary" onclick="showAddModal()">+ 新增销售订单</button>
+            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转采购单</button>
+        <button class="btn btn-primary" onclick="batchDelete()"
+            style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
+        <button class="btn btn-primary" onclick="batchExport()"
+            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为.csv</button>
+        <button class="btn btn-primary" onclick="toggleModal('importModal')"
+            style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
+        <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增订单</button>
     </div>
 </div>
 
@@ -61,6 +66,8 @@
                 <th>报价编号</th>
                 <th>报价型号</th>
                 <th>品牌</th>
+                <th>报价(KWR)</th>
+                <th>报价(USD)</th>
                 <th>完结状态</th>
                 <th>付款状态</th>
                 <th>已付金额</th>
@@ -80,6 +87,8 @@
                     style="cursor: pointer; color: var(--primary);">{{ item.inquiry_mpn }}</td>
                 <td onclick="editField('{{ item.order_id }}', 'inquiry_brand', '{{ item.inquiry_brand }}')"
                     style="cursor: pointer; color: var(--primary);">{{ item.inquiry_brand }}</td>
+                <td><span style="color:var(--primary);">{{ item.price_kwr }}</span></td>
+                <td><span style="color:var(--primary);">{{ item.price_usd }}</span></td>
                 <td>
                     <label class="switch">
                         <input type="checkbox" {% if item.is_finished==1 %}checked{% endif %}

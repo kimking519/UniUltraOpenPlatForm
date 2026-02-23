@@ -2,7 +2,7 @@
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-    <h1>6. 报价订单 (uni_offer)</h1>
+    <h1>6. 报价订单</h1>
     {% if current_user.rule == '3' or current_user.rule == '0' %}
     <div style="display: flex; gap: 1rem;">
         {% if current_user.rule == '3' %}
@@ -68,11 +68,14 @@
                     <th style="min-width: 120px;">需求编号</th>
                     <th style="min-width: 130px;">询价型号</th>
                     <th style="min-width: 130px;">报价型号</th>
-                    <th style="min-width: 80px;">品牌</th>
-                    <th style="min-width: 70px;">需求(pcs)</th>
-                    <th style="min-width: 70px;">报价(pcs)</th>
+                    <th style="min-width: 80px;">需求品牌</th>
+                    <th style="min-width: 80px;">报价品牌</th>
+                    <th style="min-width: 70px;">需求数量(pcs)</th>
+                    <th style="min-width: 70px;">报价数量(pcs)</th>
                     <th style="min-width: 70px;">成本价</th>
-                    <th style="min-width: 70px;">报价</th>
+                    <th style="min-width: 70px;">报价(RMB)</th>
+                    <th style="min-width: 70px;">报价(KWR)</th>
+                    <th style="min-width: 70px;">报价(USD)</th>
                     <th style="min-width: 80px;">平台</th>
                     <th style="min-width: 120px;">供应商</th>
                     <th style="min-width: 80px;">批号(DC)</th>
@@ -101,6 +104,9 @@
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
                             }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{
+                            row.inquiry_brand
+                            }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_brand')"><span>{{ row.quoted_brand
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
@@ -111,6 +117,8 @@
                             row.cost_price_rmb }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'offer_price_rmb', 'number')"><span>{{
                             row.offer_price_rmb }}</span></td>
+                    <td><span style="color:var(--primary);">{{ row.price_kwr }}</span></td>
+                    <td><span style="color:var(--primary);">{{ row.price_usd }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'platform')"><span>{{ row.platform
                             }}</span></td>
 

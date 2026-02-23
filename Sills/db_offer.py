@@ -29,7 +29,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         params.append(cli_id)
         
     query = f"""
-    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name,
+    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.margin_rate,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' || 
             'Brand: ' || COALESCE(o.quoted_brand, '') || ' | ' || 
             'Amount(pcs): ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' | ' || 
@@ -48,10 +48,32 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         total = conn.execute(count_query, params).fetchone()[0]
         items = conn.execute(query, params + [page_size, offset]).fetchall()
         
-        results = [
-            {k: ("" if v is None else v) for k, v in dict(row).items()}
-            for row in items
-        ]
+        results = []
+        for row in items:
+            d = dict(row)
+            results.append({k: ("" if v is None else v) for k, v in d.items()})
+
+        try:
+            rate_krw = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_val = float(rate_krw[0]) if rate_krw else 180.0
+            usd_val = float(rate_usd[0]) if rate_usd else 7.0
+            
+            for r in results:
+                price = r.get('offer_price_rmb') or 0.0
+                margin = float(r.get('margin_rate') or 0.0)
+                final_price = float(price) * (1 + margin / 100.0)
+                
+                if krw_val > 10: r['price_kwr'] = round(final_price * krw_val, 2)
+                else: r['price_kwr'] = round(final_price / krw_val, 2) if krw_val else 0.0
+                    
+                if usd_val > 10: r['price_usd'] = round(final_price * usd_val, 2)
+                else: r['price_usd'] = round(final_price / usd_val, 2) if usd_val else 0.0
+        except Exception as e:
+            for r in results:
+                r['price_kwr'] = 0.0
+                r['price_usd'] = 0.0
+
         return results, total
 
 def add_offer(data, emp_id, conn=None):
@@ -124,6 +146,14 @@ def add_offer(data, emp_id, conn=None):
             try: offer_price = float(data.get('offer_price_rmb') or 0.0)
             except: pass
 
+            inquiry_mpn = data.get('inquiry_mpn', '')
+            quoted_mpn = data.get('quoted_mpn', '')
+            if not quoted_mpn: quoted_mpn = inquiry_mpn
+
+            inquiry_brand = data.get('inquiry_brand', '')
+            quoted_brand = data.get('quoted_brand', '')
+            if not quoted_brand: quoted_brand = inquiry_brand
+            
             sql = """
             INSERT INTO uni_offer (
                 offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
@@ -133,13 +163,14 @@ def add_offer(data, emp_id, conn=None):
             """
             params = (
                 offer_id, offer_date, quote_id,
-                data.get('inquiry_mpn', ''), data.get('quoted_mpn', ''),
-                data.get('inquiry_brand', ''), data.get('quoted_brand', ''),
+                inquiry_mpn, quoted_mpn,
+                inquiry_brand, quoted_brand,
                 inquiry_qty, actual_qty, quoted_qty,
                 cost_price, offer_price,
-                data.get('platform', ''), vendor_id,
-                data.get('date_code', ''), data.get('delivery_date', ''),
-                emp_id, data.get('offer_statement', ''), data.get('remark', '')
+                data.get('platform', ''),
+                vendor_id, data.get('date_code', ''),
+                data.get('delivery_date', ''), emp_id,
+                data.get('offer_statement', ''), data.get('remark', '')
             )
             conn.execute(sql, params)
             if must_close:
@@ -191,6 +222,8 @@ def batch_delete_offer(offer_ids):
             conn.commit()
             return True, "批量删除成功"
     except Exception as e:
+        if "FOREIGN KEY constraint failed" in str(e):
+            return False, "删除失败：部分记录已被后续流程（如销售订单/采购记录）引用，无法直接删除。"
         return False, str(e)
 
 def batch_import_offer_text(text, emp_id):

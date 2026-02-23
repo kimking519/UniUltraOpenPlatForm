@@ -2,27 +2,19 @@
 
 {% block content %}
 <div class="header-action">
-    <h2>2. 员工管理 (uni_emp)</h2>
-    {% if current_user.rule == '3' %}
-    <div style="display: flex; gap: 1rem;">
+    <h1>5. 员工管理</h1>
+    <div style="display: flex; gap: 1rem; align-items: center;">
+        <form action="/emp" method="get" style="display: flex; gap: 0.5rem; align-items: center; margin: 0;">
+            <input type="text" name="search" value="{{ search }}" placeholder="搜索姓名或账号..."
+                style="padding: 0.4rem; border: 1px solid var(--border); border-radius: 4px; width: 200px;">
+            <button type="submit" class="btn btn-primary" style="height: fit-content;">查询</button>
+        </form>
+        {% if current_user.rule == '3' %}
         <button class="btn" style="background: var(--secondary); color: white;"
             onclick="toggleModal('importModal')">批量导入</button>
         <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增员工</button>
+        {% endif %}
     </div>
-    {% endif %}
-</div>
-
-<!-- Search Bar -->
-<div class="filter-bar card"
-    style="margin-top: 1rem; margin-bottom: 1rem; display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
-    <form action="/emp" method="get" style="display: flex; gap: 1rem; width: 100%;">
-        <div style="flex: 1;">
-            <label>搜索</label>
-            <input type="text" name="search" value="{{ search }}" placeholder="搜索姓名或账号..."
-                style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: 4px;">
-        </div>
-        <button type="submit" class="btn btn-primary" style="height: fit-content;">查询</button>
-    </form>
 </div>
 
 <div class="table-container">
