@@ -16,7 +16,17 @@ import uvicorn
 import shutil
 import os
 import platform
+import io
+import json
+import base64
+import urllib.request
+import urllib.error
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import openpyxl
 
 app = FastAPI()
 
@@ -672,61 +682,127 @@ async def offer_batch_delete_api(request: Request, current_user: dict = Depends(
     success, msg = batch_delete_offer(ids)
     return {"success": success, "message": msg}
 
-@app.post("/api/offer/send_email")
-async def offer_send_email_api(request: Request, current_user: dict = Depends(login_required)):
+@app.post("/api/offer/batch_send_email")
+async def offer_batch_send_email_api(request: Request, current_user: dict = Depends(login_required)):
     data = await request.json()
-    id = data.get("id")
-    if not id:
-        return {"success": False, "message": "未指定报价编号"}
-        
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录"}
+
+    # 1. Fetch Data
     from Sills.base import get_db_connection
+    placeholders = ','.join(['?'] * len(ids))
     with get_db_connection() as conn:
-        row = conn.execute("""
-            SELECT o.*, v.vendor_name, c.cli_name, c.contact_email 
+        # Get KRW rate for calculation
+        try:
+            rate_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_rate = float(rate_row[0]) if rate_row else 180.0
+        except: krw_rate = 180.0
+
+        query = f"""
+            SELECT o.*, v.vendor_name, c.cli_name
             FROM uni_offer o
             LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
-            WHERE o.offer_id = ?
-        """, (id,)).fetchone()
+            WHERE o.offer_id IN ({placeholders})
+        """
+        rows = conn.execute(query, ids).fetchall()
+    
+    if not rows:
+        return {"success": False, "message": "记录不存在"}
+
+    # 2. Generate Excel and Body
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Batch Offers"
+    # Headers exactly as requested: Model, Brand, QTY(pcs), Price(KWR), DC, L/T, Remark
+    headers = ['Model', 'Brand', 'QTY(pcs)', 'Price(KWR)', 'DC', 'L/T', 'Remark']
+    ws.append(headers)
+    
+    email_body_sections = []
+    
+    for row_data in rows:
+        r = dict(row_data)
+        # Handle KRW price if missing
+        pkwr = r.get('price_kwr')
+        if not pkwr:
+            try: pkwr = round(float(r['offer_price_rmb'] or 0) * krw_rate, 1)
+            except: pkwr = 0.0
+            
+        # Format for Excel
+        ws.append([
+            r['quoted_mpn'] or r['inquiry_mpn'], r['quoted_brand'] or r['inquiry_brand'],
+            r['quoted_qty'], pkwr, r['date_code'], r['delivery_date'], r['remark']
+        ])
         
-    if not row:
-        return {"success": False, "message": "报价记录不存在"}
+        # Format for Email Body (Template requested)
+        email_body_sections.append(f"""================
+Model：{r['quoted_mpn'] or r['inquiry_mpn']}
+Brand：{r['quoted_brand'] or r['inquiry_brand']}
+Amount(pcs)：{r['quoted_qty']}
+Price(KRW)：{pkwr}
+DC:{r['date_code']}
+LeadTime：{r['delivery_date']}
+Remark: {r['remark']}
+================ """ )
+
+    full_body_for_email = "您好，这是批量导出的报价信息，请查收附件：\n\n" + "\n\n".join(email_body_sections)
+    full_body_for_clipboard = "\n\n".join(email_body_sections)
+    
+    excel_file = io.BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+    
+    # 3. MIME
+    message = MIMEMultipart()
+    message['To'] = 'joy@unicornsemi.com'
+    message['Subject'] = f"批量报价汇总 - {len(rows)}条记录"
+    message.attach(MIMEText(full_body_for_email, 'plain'))
+    
+    part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    part.set_payload(excel_file.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename="batch_offers_{datetime.now().strftime("%Y%m%d%H%M%S")}.xlsx"')
+    message.attach(part)
+    
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+    
+    # 4. Gmail Skill (Maton Gateway)
+    maton_key = "AIzaSyCgZbWmrE266eSmCynikDsoddpt_ERCbvs"
+    try:
+        url = 'https://gateway.maton.ai/google-mail/gmail/v1/users/me/messages/send'
+        payload = json.dumps({'raw': raw_message}).encode('utf-8')
         
-    r = dict(row)
-    # 构造邮件内容
-    subject = f"【UniUltra 报价单】型号: {r['quoted_mpn'] or r['inquiry_mpn']}"
-    body = f"""
-尊敬的客户 {r['cli_name'] or '您好'}:
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method='POST'
+        )
+        req.add_header('Authorization', f'Bearer {maton_key}')
+        req.add_header('Content-Type', 'application/json')
+        
+        opener = urllib.request.build_opener()
+        try:
+            with opener.open(req, timeout=30) as response:
+                resp_body = response.read().decode('utf-8')
+                # Prepare base64 for frontend download
+                excel_b64 = base64.b64encode(excel_file.getvalue()).decode('utf-8')
+                return {
+                    "success": True, 
+                    "message": f"成功发送 {len(rows)} 条报价到 joy@unicornsemi.com",
+                    "clipboard": full_body_for_clipboard,
+                    "excel_b64": excel_b64,
+                    "filename": f"batch_offers_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+                }
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8')
+            return {"success": False, "message": f"邮件发送失败 (HTTP {e.code}): {err_body}"}
+    except Exception as e:
+        return {"success": False, "message": f"邮件发送失败: {str(e)}"}
 
-根据您的需求，我们为您提供如下报价：
----------------------------------------------
-询价型号: {r['inquiry_mpn']}
-报价型号: {r['quoted_mpn'] or r['inquiry_mpn']}
-数量(pcs): {r['quoted_qty']}
-报价(RMB): {r['offer_price_rmb']}
-报价(KWR): {r['price_kwr']}
-报价(USD): {r['price_usd']}
-批号(DC): {r['date_code']}
-交期(LT): {r['delivery_date']}
-备注: {r['remark']}
----------------------------------------------
-如有任何疑问，欢迎随时联系。
-
-此致,
-UniUltra 系统自动发送
-负责人: {current_user['user']}
-    """
-    
-    # 这里模拟发送邮件，后续可接入实际 SMTP
-    print(f"DEBUG: 正在向 {r['contact_email'] or '未知邮箱'} 发送邮件...")
-    print(f"DEBUG: 主题: {subject}")
-    
-    return {"success": True, "message": f"报价单 {id} 的邮件内容已生成并模拟发送给 {r['contact_email'] or '默认联系人'}。"}
-
-@app.post("/api/offer/export_csv")
-async def offer_export_csv(request: Request, current_user: dict = Depends(login_required)):
-    
+@app.post("/api/offer/export_excel")
+async def offer_export_excel(request: Request, current_user: dict = Depends(login_required)):
     data = await request.json()
     ids = data.get("ids", [])
     if not ids:
@@ -735,7 +811,12 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
     from Sills.base import get_db_connection
     placeholders = ','.join(['?'] * len(ids))
     with get_db_connection() as conn:
-        # 联表查询以获取客户名和供应商名
+        # Get KRW rate for calculation
+        try:
+            rate_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_rate = float(rate_row[0]) if rate_row else 180.0
+        except: krw_rate = 180.0
+
         query = f"""
             SELECT o.*, v.vendor_name, c.cli_name 
             FROM uni_offer o
@@ -744,32 +825,54 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
             LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
             WHERE o.offer_id IN ({placeholders})
         """
-        offers = conn.execute(query, ids).fetchall()
+        rows = conn.execute(query, ids).fetchall()
         
-    import io, csv
-    output = io.StringIO()
-    output.write('\ufeff')
-    writer = csv.writer(output)
-    writer.writerow(['报价编号','日期','客户名称','需求编号','询价型号','报价型号','询价品牌','报价品牌','询价数量','报价数量','成本价','报价(RMB)','报价(KWR)','报价(USD)','利润','总利润','平台','供应商','批号','交期','备注'])
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Batch Offers"
+    headers = ['Model', 'Brand', 'QTY(pcs)', 'Price(KWR)', 'DC', 'L/T', 'Remark']
+    ws.append(headers)
     
-    for row in offers:
-        r = dict(row)
-        cost = float(r.get('cost_price_rmb') or 0.0)
-        price = float(r.get('offer_price_rmb') or 0.0)
-        qty = int(r.get('quoted_qty') or 0)
-        profit = price - cost
-        total_profit = profit * qty
-
-        writer.writerow([
-            r.get('offer_id'), r.get('offer_date'), r.get('cli_name'), r.get('quote_id'),
-            r.get('inquiry_mpn'), r.get('quoted_mpn'), r.get('inquiry_brand'), r.get('quoted_brand'),
-            r.get('inquiry_qty'), r.get('quoted_qty'),
-            cost, price, r.get('price_kwr'), r.get('price_usd'),
-            round(profit, 2), round(total_profit, 2),
-            r.get('platform'), r.get('vendor_name'), r.get('date_code'), r.get('delivery_date'), r.get('remark')
+    email_body_sections = []
+    
+    for row_data in rows:
+        r = dict(row_data)
+        # Handle KRW price if missing
+        pkwr = r.get('price_kwr')
+        if not pkwr:
+            try: pkwr = round(float(r['offer_price_rmb'] or 0) * krw_rate, 1)
+            except: pkwr = 0.0
+            
+        # Format for Excel
+        ws.append([
+            r['quoted_mpn'] or r['inquiry_mpn'], r['quoted_brand'] or r['inquiry_brand'],
+            r['quoted_qty'], pkwr, r['date_code'], r['delivery_date'], r['remark']
         ])
         
-    return {"success": True, "csv_content": output.getvalue()}
+        # Format for Email Body (Template requested)
+        email_body_sections.append(f"""================
+Model：{r['quoted_mpn'] or r['inquiry_mpn']}
+Brand：{r['quoted_brand'] or r['inquiry_brand']}
+Amount(pcs)：{r['quoted_qty']}
+Price(KRW)：{pkwr}
+DC:{r['date_code']}
+LeadTime：{r['delivery_date']}
+Remark: {r['remark']}
+================ """ )
+
+    full_body_for_clipboard = "\n\n".join(email_body_sections)
+    
+    excel_file = io.BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+    
+    excel_b64 = base64.b64encode(excel_file.getvalue()).decode('utf-8')
+    return {
+        "success": True, 
+        "clipboard": full_body_for_clipboard,
+        "excel_b64": excel_b64,
+        "filename": f"batch_offers_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    }
 
 @app.get("/order", response_class=HTMLResponse)
 async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_finished: str = ""):

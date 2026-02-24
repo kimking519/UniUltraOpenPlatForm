@@ -95,7 +95,22 @@ python openclaw_skills/sale-input-needs/scripts/auto_input.py --cli_id "C001" --
 
 - **型号纠错**：电子行业型号对字母非常敏感，录入前请务必去除多余的空格并转换为大写。
 - **缺失客户**：如果用户未指定客户名，请先询问或在 `uni_cli` 中模糊搜索。
-- **批量处理**：如果聊天记录包含多个型号（如“A型号要100，B型号要200”），请循环调用录入命令。
+- **批量处理**：如果聊天记录包含多个型号（如“A型号要100，B型号要200”），请循环调用录入命令或使用新支持的 `--text` 模式。
+
+## Batch Processing (New)
+
+如果你有多个型号，可以使用 `--text` 参数：
+
+```bash
+python openclaw_skills/sale-input-needs/scripts/auto_input.py --cli_name "客户A" --text "TPS54331 100 TI
+STM32F103 500 ST"
+```
+
+## System Integration: Email Summary
+
+系统现在支持在“报价管理”页面一键将选中的报价记录汇总发送邮件。
+- **发送至**: joy@unicornsemi.com
+- **功能**: 生成汇总表格附件 (.xlsx) 并生成标准格式的邮件正文。
 
 ## Troubleshooting
 
@@ -111,4 +126,5 @@ python openclaw_skills/sale-input-needs/scripts/auto_input.py --cli_id "C001" --
 ## References
 
 - 核心脚本位置: `openclaw_skills/sale-input-needs/scripts/auto_input.py`
+- 数据库查询工具: `openclaw_skills/sale-input-needs/scripts/db_tool.py`
 - 原始数据表: `uni_quote`

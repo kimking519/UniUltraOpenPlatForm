@@ -9,12 +9,10 @@
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
-        <button class="btn btn-primary" onclick="batchSendEmail()"
-            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量发邮件</button>
         <button class="btn btn-primary" onclick="batchToOrder()"
             style="background: #6366f1; color: white; border: 1px solid #6366f1;">批量转销售订单</button>
         <button class="btn btn-primary" onclick="exportSelectedOffers()"
-            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中报价.csv</button>
+            style="background: #10b981; color: white; border: 1px solid #10b981;">导出 Excel 报价卡片</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
             style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
         <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增报价</button>
@@ -587,7 +585,7 @@
         }
 
         try {
-            const response = await fetch('/api/offer/export_csv', {
+            const response = await fetch('/api/offer/export_excel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: selected })
@@ -595,15 +593,35 @@
 
             const data = await response.json();
             if (data.success) {
-                const blob = new Blob([data.csv_content], { type: 'text/csv;charset=utf-8-sig;' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `offer_batch_export_${new Date().getTime()}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
+                // 1. Copy to clipboard
+                if (data.clipboard) {
+                    try {
+                        await navigator.clipboard.writeText(data.clipboard);
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                    }
+                }
+
+                // 2. Download Excel
+                if (data.excel_b64) {
+                    const byteCharacters = atob(data.excel_b64);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = data.filename || 'batch_offers.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                }
+
+                alert("导出成功，内容已自动复制到剪贴板，Excel 文件已导出。您可直接(Ctrl+V)粘贴模板内容！");
             } else {
                 alert('导出失败: ' + data.message);
             }
