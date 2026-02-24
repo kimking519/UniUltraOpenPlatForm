@@ -33,7 +33,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
         params.append(int(is_shipped))
         
     query = f"""
-    SELECT b.*, ord.order_id, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name, c.margin_rate, off.offer_price_rmb
+    SELECT b.*, ord.order_no, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name, c.margin_rate, off.offer_price_rmb
     {base_query}
     ORDER BY b.created_at DESC
     LIMIT ? OFFSET ?
@@ -272,26 +272,36 @@ def update_buy_node(buy_id, field, value):
 
 def update_buy(buy_id, data):
     try:
+        # Data normalization for FKs and types
+        if 'vendor_id' in data and not str(data['vendor_id']).strip():
+            data['vendor_id'] = None
+        if 'order_id' in data and not str(data['order_id']).strip():
+            data['order_id'] = None
+
         if 'buy_price_rmb' in data or 'buy_qty' in data:
             with get_db_connection() as conn:
                 current = conn.execute("SELECT buy_price_rmb, buy_qty FROM uni_buy WHERE buy_id = ?", (buy_id,)).fetchone()
-                price = float(data.get('buy_price_rmb', current['buy_price_rmb']))
-                qty = int(data.get('buy_qty', current['buy_qty']))
-                data['total_amount'] = round(price * qty, 2)
+                if current:
+                    price = float(data.get('buy_price_rmb', current['buy_price_rmb'] or 0))
+                    qty = int(data.get('buy_qty', current['buy_qty'] or 0))
+                    data['total_amount'] = round(price * qty, 2)
 
         set_cols = []
         params = []
         for k, v in data.items():
             set_cols.append(f"{k} = ?")
             params.append(v)
-        if not set_cols: return True, "No changes"
+        
+        if not set_cols: return True, "无修改内容"
         
         sql = f"UPDATE uni_buy SET {', '.join(set_cols)} WHERE buy_id = ?"
         params.append(buy_id)
         
         with get_db_connection() as conn:
-            conn.execute(sql, params)
+            res = conn.execute(sql, params)
             conn.commit()
+            if res.rowcount == 0:
+                return False, f"未找到记录 {buy_id} 或数据无变化"
             return True, "更新成功"
     except Exception as e:
         return False, str(e)

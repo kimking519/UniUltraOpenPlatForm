@@ -1,15 +1,17 @@
 {% extends "layout.html" %}
 {% block content %}
-<div class="header-action">
+<div class="header-action"
+    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
     <h1>7. 采购管理</h1>
-    <div style="display: flex; gap: 1rem;">
-        <button class="btn btn-primary" onclick="batchDelete()"
-            style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
-        <button class="btn btn-primary" onclick="batchExport()"
-            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为.csv</button>
+    <div style="display: flex; gap: 0.8rem; align-items: center; margin-left: auto;">
+        <button class="btn btn-primary" onclick="showAddModal()" style="font-size: 0.85rem;">+ 新增采购记录</button>
         <button class="btn btn-primary" onclick="showImportModal()"
-            style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
-        <button class="btn btn-primary" onclick="showAddModal()">+ 新增采购单</button>
+            style="background: var(--light); color: var(--text); border: 1px solid var(--border); font-size: 0.85rem;">+
+            批量导入</button>
+        <button class="btn btn-primary" onclick="batchExport()"
+            style="background: #10b981; color: white; border: 1px solid #10b981; font-size: 0.85rem;">批量导出 CSV</button>
+        <button class="btn btn-primary" onclick="batchDelete()"
+            style="background: #ef4444; color: white; border: 1px solid #ef4444; font-size: 0.85rem;">批量删除</button>
     </div>
 </div>
 
@@ -26,10 +28,11 @@
     </div>
     <div>
         <label>销售订单</label>
-        <select id="filter_order" onchange="applyFilter()" style="width: 150px; padding: 0.4rem;">
+        <select id="filter_order" onchange="applyFilter()" style="width: 250px; padding: 0.4rem;">
             <option value="">全部订单</option>
             {% for o in order_list %}
-            <option value="{{ o.order_id }}" {% if order_id==o.order_id %}selected{% endif %}>{{ o.order_id }}</option>
+            <option value="{{ o.order_id }}" {% if order_id==o.order_id %}selected{% endif %}>{{ o.order_no }} ({{
+                o.order_id }})</option>
             {% endfor %}
         </select>
     </div>
@@ -56,10 +59,7 @@
     <button class="btn btn-primary" onclick="applyFilter()">查询</button>
 </div>
 
-<div class="batch-actions" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
-    <button class="btn" onclick="batchExport()">批量导出 CSV</button>
-    <button class="btn" style="color: red;" onclick="batchDelete()">批量删除</button>
-</div>
+<!-- 删除多余的批量操作栏 -->
 
 <div class="table-container">
     <table style="font-size: 0.85rem;">
@@ -90,14 +90,21 @@
                 <td><input type="checkbox" class="row-checkbox" value="{{ item.buy_id }}"></td>
                 <td>{{ item.buy_id }}</td>
                 <td>{{ item.buy_date }}</td>
-                <td>{{ item.order_id }}</td>
+                <td>{{ item.order_no }}</td>
                 <td>{{ item.cli_id }}</td>
                 <td>{{ item.cli_name }}</td>
-                <td>{{ item.vendor_name }}</td>
-                <td>
-                    <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                        title="{{ item.vendor_address }}">{{ item.vendor_address }}</div>
+                <td style="min-width: 140px;">
+                    <select onchange="updateVendorChange('{{ item.buy_id }}', this.value)"
+                        style="width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px;">
+                        <option value="">--未选择--</option>
+                        {% for v in vendor_list %}
+                        <option value="{{ v.vendor_id }}" {% if v.vendor_id==item.vendor_id %}selected{% endif %}>{{
+                            v.vendor_name }}</option>
+                        {% endfor %}
+                    </select>
                 </td>
+                <td id="addr-{{ item.buy_id }}" style="font-size: 0.75rem; color: #666; max-width: 200px;">{{
+                    item.vendor_address }}</td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_mpn', '{{ item.buy_mpn }}')"
                     style="cursor: pointer; color: var(--primary);">{{ item.buy_mpn }}</td>
                 <td onclick="editField('{{ item.buy_id }}', 'buy_brand', '{{ item.buy_brand }}')"
@@ -172,17 +179,21 @@
                 <label>对应销售订单</label><br>
                 <select name="order_id" required style="width: 100%; padding: 0.5rem;">
                     {% for o in order_list %}
-                    <option value="{{ o.order_id }}">{{ o.order_id }}</option>
+                    <option value="{{ o.order_id }}">{{ o.order_no }} ({{ o.order_id }})</option>
                     {% endfor %}
                 </select>
             </div>
             <div style="grid-column: span 2;">
                 <label>供应商</label><br>
-                <select name="vendor_id" required style="width: 100%; padding: 0.5rem;">
+                <select name="vendor_id" required onchange="updateModalAddress(this.value)"
+                    style="width: 100%; padding: 0.5rem;">
+                    <option value="">--请选择--</option>
                     {% for v in vendor_list %}
                     <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
                     {% endfor %}
                 </select>
+                <div id="modal_vendor_addr" style="font-size: 0.75rem; color: #666; margin-top: 4px; min-height: 1rem;">
+                </div>
             </div>
             <div>
                 <label>采购型号</label><br>
@@ -251,6 +262,34 @@
     function hideAddModal() { document.getElementById('addModal').style.display = 'none'; }
     function showImportModal() { document.getElementById('importModal').style.display = 'block'; }
     function hideImportModal() { document.getElementById('importModal').style.display = 'none'; }
+
+    const vendorAddresses = {{ vendor_addresses | tojson | safe }};
+
+    function updateModalAddress(vid) {
+        document.getElementById('modal_vendor_addr').innerText = vendorAddresses[vid] || "";
+    }
+
+    async function updateVendorChange(buyId, vid) {
+        // Update local address display immediately
+        const addrCell = document.getElementById(`addr-${buyId}`);
+        if (addrCell) addrCell.innerText = vendorAddresses[vid] || "";
+
+        // Send to backend
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', 'vendor_id');
+        formData.append('value', vid);
+
+        try {
+            const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
+            const res = await resp.json();
+            if (!res.success) alert(res.message);
+            else window.location.reload(); // Reload to confirm change and sync UI
+        } catch (e) {
+            console.error(e);
+            alert("更新失败，请检查网络或后端。");
+        }
+    }
 
     function applyFilter() {
         const cli = document.getElementById('filter_cli').value;
@@ -346,14 +385,35 @@
         else alert(res.message);
     }
 
-    async function deleteBuy(buyId) {
-        if (!confirm('确定删除采购记录 ' + buyId + ' 吗？')) return;
+    async function updateRowField(buyId, field, value) {
         const formData = new FormData();
         formData.append('buy_id', buyId);
-        const resp = await fetch('/api/buy/delete', { method: 'POST', body: formData });
+        formData.append('field', field);
+        formData.append('value', value);
+
+        const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
         const res = await resp.json();
         if (res.success) window.location.reload();
         else alert(res.message);
+    }
+
+    async function deleteBuy(buyId) {
+        if (!confirm('确定删除采购记录 ' + buyId + ' 吗？')) return;
+        try {
+            const formData = new FormData();
+            formData.append('buy_id', buyId);
+            const resp = await fetch('/api/buy/delete', { method: 'POST', body: formData });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error("服务器错误: " + text.substring(0, 100));
+            }
+            const res = await resp.json();
+            if (res.success) window.location.reload();
+            else alert(res.message);
+        } catch (e) {
+            console.error(e);
+            alert("删除失败: " + e.message);
+        }
     }
 </script>
 {% endblock %}

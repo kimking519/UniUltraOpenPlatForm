@@ -9,8 +9,10 @@
         <button class="btn btn-primary" onclick="batchDelete()"
             style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
         {% endif %}
+        <button class="btn btn-primary" onclick="batchSendEmail()"
+            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量发邮件</button>
         <button class="btn btn-primary" onclick="batchToOrder()"
-            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转销售订单</button>
+            style="background: #6366f1; color: white; border: 1px solid #6366f1;">批量转销售订单</button>
         <button class="btn btn-primary" onclick="exportSelectedOffers()"
             style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中报价.csv</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
@@ -74,15 +76,17 @@
                     <th style="min-width: 70px;">报价数量(pcs)</th>
                     <th style="min-width: 70px;">成本价</th>
                     <th style="min-width: 70px;">报价(RMB)</th>
-                    <th style="min-width: 70px;">报价(KWR)</th>
-                    <th style="min-width: 70px;">报价(USD)</th>
+                    <th style="min-width: 80px;">报价(KWR)</th>
+                    <th style="min-width: 80px;">报价(USD)</th>
+                    <th style="min-width: 80px;">利润</th>
+                    <th style="min-width: 80px;">总利润</th>
                     <th style="min-width: 80px;">平台</th>
                     <th style="min-width: 120px;">供应商</th>
                     <th style="min-width: 80px;">批号(DC)</th>
-                    <th style="min-width: 80px;">交期(LT)</th>
+                    <th style="min-width: 150px;">交期(LT)</th>
                     <th style="min-width: 80px;">负责人</th>
                     <th style="min-width: 350px;">拼接信息</th>
-                    <th style="min-width: 120px;">备注</th>
+                    <th style="min-width: 200px;">备注</th>
                     {% if current_user.rule == '3' %}
                     <th style="min-width: 80px; position: sticky; right: 0; background: white; z-index: 1;">操作</th>
                     {% endif %}
@@ -117,8 +121,12 @@
                             row.cost_price_rmb }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'offer_price_rmb', 'number')"><span>{{
                             row.offer_price_rmb }}</span></td>
-                    <td><span style="color:var(--primary);">{{ row.price_kwr }}</span></td>
-                    <td><span style="color:var(--primary);">{{ row.price_usd }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'price_kwr', 'number')"><span
+                            style="color:var(--primary);">{{ row.price_kwr }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'price_usd', 'number')"><span
+                            style="color:var(--primary);">{{ row.price_usd }}</span></td>
+                    <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
+                    <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'platform')"><span>{{ row.platform
                             }}</span></td>
 
@@ -138,14 +146,16 @@
                     <td>{{ row.emp_name }}</td>
                     <td style="font-size: 0.85rem; color: var(--secondary); background: #f8fafc;">{{
                         row.combined_offer_info }}</td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'remark')"><span>{{ row.remark }}</span>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'remark')" style="white-space: pre-line;">
+                        <span>{{ row.remark }}</span>
                     </td>
 
                     {% if current_user.rule == '3' %}
                     <td style="position: sticky; right: 0; background: white; z-index: 1;">
-                        <button class="btn"
-                            style="padding: 0.2rem 0.5rem; font-size: 0.8rem; background: #ef4444; color: white;"
-                            onclick="deleteRow('{{ row.offer_id }}')">删除</button>
+                        <div style="display: flex; gap: 0.3rem;">
+                            <button class="btn" style="color: red; padding: 2px 8px;"
+                                onclick="deleteOffer('{{ row.offer_id }}')">删除</button>
+                        </div>
                     </td>
                     {% endif %}
                 </tr>
@@ -462,7 +472,47 @@
             });
     }
 
-    function deleteRow(offer_id) {
+    function batchSendEmail() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要发送邮件的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价单批量模拟发送邮件吗？`)) return;
+
+        // 递归或并行发送逻辑
+        let successCount = 0;
+        let failCount = 0;
+        const promises = selected.map(id => {
+            return fetch('/api/offer/send_email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            }).then(res => res.json())
+                .then(data => { if (data.success) successCount++; else failCount++; });
+        });
+
+        Promise.all(promises).then(() => {
+            alert(`批量处理完成：成功 ${successCount} 条，失败 ${failCount} 条。`);
+        });
+    }
+
+    function sendOfferEmail(id) {
+        if (!confirm('确定要发送（模拟）报价邮件吗？')) return;
+        fetch('/api/offer/send_email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) alert(data.message);
+                else alert('发送失败: ' + data.message);
+            });
+    }
+
+    function deleteOffer(offer_id) {
         if (confirm(`确定要删除报价 ${offer_id} 吗？`)) {
             const formData = new FormData();
             formData.append('offer_id', offer_id);

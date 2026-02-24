@@ -3,6 +3,33 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
+def generate_order_no(cli_name=""):
+    """生成格式为 UNI-客户名称-YYYYMMDDHH 的订单编号"""
+    now = datetime.now()
+    today_str = now.strftime("%Y%m%d%H")
+    prefix = f"UNI-{cli_name}-{today_str}"
+    
+    with get_db_connection() as conn:
+        # 查找该前缀最大的编号
+        row = conn.execute("SELECT order_no FROM uni_order WHERE order_no LIKE ? ORDER BY order_no DESC LIMIT 1", (f"{prefix}%",)).fetchone()
+        
+        if not row:
+            return prefix
+        
+        last_no = row['order_no']
+        try:
+            # 如果已经存在该小时的，则尝试额外增加序列标识
+            if last_no == prefix:
+                return f"{prefix}-01"
+            elif '-' in last_no and last_no.split('-')[-1].isdigit():
+                parts = last_no.split('-')
+                seq = int(parts[-1]) + 1
+                return "-".join(parts[:-1]) + f"-{seq:02d}"
+            else:
+                return f"{prefix}-01"
+        except:
+            return f"{prefix}-01"
+
 def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="", end_date="", is_finished=""):
     offset = (page - 1) * page_size
     query = """
@@ -27,7 +54,7 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
         params.append(int(is_finished))
 
     count_sql = "SELECT COUNT(*) " + query
-    data_sql = "SELECT o.*, c.cli_name, c.margin_rate, off.quoted_mpn, off.offer_price_rmb " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"
+    data_sql = "SELECT o.*, c.cli_name, c.margin_rate, off.quoted_mpn, off.offer_price_rmb, off.cost_price_rmb AS source_cost, off.quoted_qty " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"
     params_with_limit = params + [page_size, offset]
 
     with get_db_connection() as conn:
@@ -41,21 +68,32 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
             rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
             krw_val = float(rate_krw[0]) if rate_krw else 180.0
             usd_val = float(rate_usd[0]) if rate_usd else 7.0
+        except:
+            krw_val, usd_val = 180.0, 7.0
+
+        for r in results:
+            # 取本机保存的 price_rmb，如果有的话，否则用报价单的 offer_price_rmb
+            price = r.get('price_rmb')
+            if price is None or str(price).strip() == "":
+                price = r.get('offer_price_rmb') or 0.0
+            price = float(price)
+            r['price_rmb'] = price  # 确保这个字段存在以展示
             
-            for r in results:
-                price = r.get('offer_price_rmb') or r.get('sales_price_rmb') or 0.0
-                margin = float(r.get('margin_rate') or 0.0)
-                final_price = float(price) * (1 + margin / 100.0)
+            # 利润计算
+            cost = float(r.get('cost_price_rmb') or 0.0)
+            qty = int(r.get('quoted_qty') or 0) 
+            r['profit'] = round(price - cost, 3)
+            r['total_profit'] = int(round(r['profit'] * qty, 0))
+
+            # 动态重新计算汇率（与报价订单一致保持实时性）
+            try:
+                if krw_val > 10: r['price_kwr'] = round(price * krw_val, 1)
+                else: r['price_kwr'] = round(price / krw_val, 1) if krw_val else 0.0
                 
-                if krw_val > 10: r['price_kwr'] = round(final_price * krw_val, 2)
-                else: r['price_kwr'] = round(final_price / krw_val, 2) if krw_val else 0.0
-                    
-                if usd_val > 10: r['price_usd'] = round(final_price * usd_val, 2)
-                else: r['price_usd'] = round(final_price / usd_val, 2) if usd_val else 0.0
-        except Exception as e:
-            for r in results:
-                r['price_kwr'] = 0.0
-                r['price_usd'] = 0.0
+                if usd_val > 10: r['price_usd'] = round(price * usd_val, 2)
+                else: r['price_usd'] = round(price / usd_val, 2) if usd_val else 0.0
+            except:
+                pass
 
     return results, total
 
@@ -83,9 +121,10 @@ def add_order(data, conn=None):
                 return False, "缺少客户编号"
             
             # Check Cli
-            cli = conn.execute("SELECT cli_id FROM uni_cli WHERE cli_id = ?", (cli_id,)).fetchone()
+            cli = conn.execute("SELECT cli_name FROM uni_cli WHERE cli_id = ?", (cli_id,)).fetchone()
             if not cli:
                 return False, f"客户编号 {cli_id} 在数据库中不存在"
+            cli_name = cli['cli_name']
 
             offer_id = data.get('offer_id')
             if not offer_id or str(offer_id).strip() == "":
@@ -103,17 +142,23 @@ def add_order(data, conn=None):
             try: paid_amount = float(data.get('paid_amount') or 0.0)
             except: pass
 
+            order_no = data.get('order_no') or generate_order_no(cli_name)
+
             sql = """
             INSERT INTO uni_order (
-                order_id, order_date, cli_id, offer_id, inquiry_mpn, inquiry_brand, is_finished, is_paid, paid_amount, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                order_id, order_no, order_date, cli_id, offer_id, inquiry_mpn, inquiry_brand, 
+                price_rmb, price_kwr, price_usd, cost_price_rmb, is_finished, is_paid, paid_amount, return_status, remark
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
-                order_id, order_date, cli_id, offer_id,
+                order_id, order_no, order_date, cli_id, offer_id,
                 data.get('inquiry_mpn'), data.get('inquiry_brand'),
+                data.get('price_rmb'), data.get('price_kwr'), data.get('price_usd'),
+                data.get('cost_price_rmb'),
                 int(data.get('is_finished', 0)),
                 int(data.get('is_paid', 0)),
                 paid_amount,
+                data.get('return_status', '正常'),
                 data.get('remark', '')
             )
             conn.execute(sql, params)
@@ -202,6 +247,10 @@ def batch_convert_from_offer(offer_ids, cli_id=None):
                     "offer_id": offer_data['offer_id'],
                     "inquiry_mpn": offer_data['quoted_mpn'] or offer_data['inquiry_mpn'],
                     "inquiry_brand": offer_data['quoted_brand'] or offer_data['inquiry_brand'],
+                    "price_rmb": offer_data['offer_price_rmb'],
+                    "price_kwr": offer_data['price_kwr'],
+                    "price_usd": offer_data['price_usd'],
+                    "cost_price_rmb": offer_data['cost_price_rmb'],
                     "remark": offer_data['remark']
                 }
                 
@@ -233,7 +282,7 @@ def batch_delete_order(order_ids):
 
 def update_order_status(order_id, field, value):
     try:
-        if field not in ['is_finished', 'is_paid']:
+        if field not in ['is_finished', 'is_paid', 'return_status']:
             return False, "非法字段"
         
         sql = f"UPDATE uni_order SET {field} = ? WHERE order_id = ?"

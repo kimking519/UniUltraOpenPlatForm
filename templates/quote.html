@@ -42,15 +42,18 @@
             <option value="{{ cli.cli_id }}" {% if cli.cli_id==cli_id %}selected{% endif %}>{{ cli.cli_name }}</option>
             {% endfor %}
         </select>
-        <select name="page_size" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-            <option value="20" {% if page_size==20 %}selected{% endif %}>20条/页</option>
-            <option value="50" {% if page_size==50 %}selected{% endif %}>50条/页</option>
-            <option value="100" {% if page_size==100 %}selected{% endif %}>100条/页</option>
+        <select name="status" id="statusFilter"
+            style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; min-width: 120px;">
+            <option value="">全部状态</option>
+            <option value="询价中" {% if status=='询价中' %}selected{% endif %}>询价中</option>
+            <option value="缺货" {% if status=='缺货' %}selected{% endif %}>缺货</option>
+            <option value="已报价" {% if status=='已报价' %}selected{% endif %}>已报价</option>
         </select>
         <button type="submit" class="btn btn-primary">搜索 / 过滤</button>
-        {% if search or start_date or end_date %}
-        <a href="/quote" class="btn"
-            style="background: var(--light); color: var(--secondary); text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px;">清除</a>
+        {% if search or start_date or end_date or status %}
+        <button type="button" class="btn"
+            style="background: var(--light); color: var(--secondary); padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid var(--border); cursor: pointer;"
+            onclick="clearFilters()">清除</button>
         {% endif %}
     </form>
 </div>
@@ -73,6 +76,9 @@
                     <th style="min-width: 80px;">需求数量</th>
                     <th style="min-width: 100px;">目标价(¥)</th>
                     <th style="min-width: 100px;">成本价(¥)</th>
+                    <th style="min-width: 100px;">批号</th>
+                    <th style="min-width: 100px;">交期</th>
+                    <th style="min-width: 100px;">状态</th>
                     <th style="min-width: 250px;">需求组合信息 (系统自动汇总)</th>
                     <th style="min-width: 150px;">备注</th>
                     {% if current_user.rule == '3' %}
@@ -106,6 +112,16 @@
                             row.target_price_rmb }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'cost_price_rmb', 'number')"><span>{{
                             row.cost_price_rmb }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'date_code')"><span>{{ row.date_code
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'delivery_date')"><span>{{
+                            row.delivery_date }}</span></td>
+                    <td ondblclick="makeStatusEditable(this, '{{ row.quote_id }}', '{{ row.status }}')">
+                        <span
+                            class="badge {% if row.status == '已报价' %}badge-success{% elif row.status == '缺货' %}badge-warning{% else %}badge-info{% endif %}">
+                            {{ row.status }}
+                        </span>
+                    </td>
                     <td style="color: var(--secondary); font-size: 0.85rem;">{{ row.combined_info }}</td>
                     <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'remark')"><span>{{ row.remark }}</span>
                     </td>
@@ -149,14 +165,14 @@
         <span style="color: var(--secondary); font-size: 0.9rem;">共 {{ total }} 条记录</span>
         <div style="display: flex; gap: 0.5rem;">
             {% if page > 1 %}
-            <a href="/quote?page={{ page - 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}"
+            <a href="/quote?page={{ page - 1 }}&search={{ search }}&status={{ status }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}"
                 class="btn"
                 style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">上一页</a>
             {% endif %}
             <span style="padding: 0.3rem 0.8rem; background: var(--primary); color: white; border-radius: 4px;">{{ page
                 }} / {{ total_pages if total_pages > 0 else 1 }}</span>
             {% if page < total_pages %} <a
-                href="/quote?page={{ page + 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}"
+                href="/quote?page={{ page + 1 }}&search={{ search }}&status={{ status }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}"
                 class="btn"
                 style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">
                 下一页</a>
@@ -212,6 +228,27 @@
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
             </div>
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (D/C)</label>
+                    <input type="text" name="date_code" placeholder="如: 23+"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (L/T)</label>
+                    <input type="text" name="delivery_date" placeholder="如: 1-2 weeks"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">初始状态</label>
+                <select name="status"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="询价中">询价中</option>
+                    <option value="缺货">缺货</option>
+                    <option value="已报价">已报价</option>
+                </select>
+            </div>
             <div>
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">备注</label>
                 <textarea name="remark"
@@ -264,13 +301,60 @@
     </div>
 </div>
 
+<style>
+    .badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        display: inline-block;
+    }
+
+    .badge-info {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    /* 询价中 */
+    .badge-warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    /* 缺货 */
+    .badge-success {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    /* 已报价 */
+</style>
+
 <script>
     const cliOptions = `
-        <option value="">--择客户--</option>
+        <option value="">--选择客户--</option>
         {% for c in cli_list %}
         <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
         {% endfor %}
     `;
+
+    // 状态记忆与恢复逻辑
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const filterFields = ['search', 'start_date', 'end_date', 'cli_id', 'status', 'page_size'];
+
+        const form = document.querySelector('form[action="/quote"]');
+        if (form && urlParams.toString()) {
+            filterFields.forEach(f => {
+                const el = form.querySelector(`[name="${f}"]`);
+                if (el && urlParams.has(f)) el.value = urlParams.get(f);
+            });
+        }
+    });
+
+    function clearFilters() {
+        window.location.href = '/quote';
+    }
 
     function toggleModal(id) {
         const modal = document.getElementById(id);
@@ -288,7 +372,7 @@
         input.onblur = () => saveEdit(td, quote_id, field, input.value, originalValue);
         input.onkeydown = (e) => {
             if (e.key === 'Enter') input.blur();
-            if (e.key === 'Escape') td.innerHTML = `<span>${originalValue}</span>`;
+            if (e.key === 'Escape') td.innerHTML = isSpan ? `<span>${originalValue}</span>` : originalValue;
         };
     }
 
@@ -312,6 +396,47 @@
         };
     }
 
+    function makeStatusEditable(td, quote_id, currentStatus) {
+        if (td.querySelector('select')) return;
+        const originalBadge = td.innerHTML;
+        td.innerHTML = `
+            <select style="width: 100%; padding: 4px; box-sizing: border-box;">
+                <option value="询价中">询价中</option>
+                <option value="缺货">缺货</option>
+                <option value="已报价">已报价</option>
+            </select>
+        `;
+        const select = td.querySelector('select');
+        select.value = currentStatus;
+        select.focus();
+
+        select.onblur = () => {
+            if (select.value !== currentStatus) {
+                saveStatusEdit(td, quote_id, select.value, originalBadge);
+            } else {
+                td.innerHTML = originalBadge;
+            }
+        };
+    }
+
+    function saveStatusEdit(td, quote_id, newValue, originalBadge) {
+        const formData = new FormData();
+        formData.append('quote_id', quote_id);
+        formData.append('field', 'status');
+        formData.append('value', newValue);
+
+        fetch('/api/quote/update', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = originalBadge;
+                }
+            });
+    }
+
     function saveEdit(td, quote_id, field, newValue, originalValue, newText = null) {
         if (newValue === originalValue) {
             td.innerHTML = `<span>${originalValue}</span>`;
@@ -332,13 +457,8 @@
                     const display = newText !== null ? newText : newValue;
                     td.innerHTML = `<span style="color: green;">${display}</span>`;
                     setTimeout(() => {
-                        // Update combined info if one of its components changed
-                        if (['quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'remark'].includes(field)) {
-                            window.location.reload();
-                        } else {
-                            td.innerHTML = `<span>${display}</span>`;
-                        }
-                    }, 1000);
+                        window.location.reload(); // Reload to refresh combined info
+                    }, 500);
                 } else {
                     alert('更新失败: ' + data.message);
                     td.innerHTML = `<span>${originalValue}</span>`;
@@ -383,13 +503,13 @@
                 });
         }
     }
+
     async function batchToOffer() {
         const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
         if (selected.length === 0) {
             alert('请先选择要转换的需求记录');
             return;
         }
-
         if (!confirm(`确定要把选中的 ${selected.length} 条需求转为报价单吗？`)) return;
 
         try {
@@ -402,7 +522,7 @@
             const data = await response.json();
             if (data.success) {
                 alert(data.message);
-                window.location.href = '/offer'; // Redirect to see results
+                window.location.href = '/offer';
             } else {
                 alert('转换失败: ' + data.message);
             }
@@ -428,7 +548,6 @@
 
             const data = await response.json();
             if (data.success) {
-                // The backend returned text with BOM prepended
                 const blob = new Blob([data.csv_content], { type: 'text/csv;charset=utf-8-sig;' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');

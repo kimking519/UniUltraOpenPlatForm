@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response, Co
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from Sills.base import init_db, get_db_connection
+from Sills.base import init_db, get_db_connection, current_env
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
@@ -19,6 +19,16 @@ import platform
 from datetime import datetime
 
 app = FastAPI()
+
+@app.middleware("http")
+async def env_middleware(request: Request, call_next):
+    env = request.cookies.get("app_env", "dev")
+    token = current_env.set(env)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        current_env.reset(token)
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -337,6 +347,32 @@ async def cli_import_csv(csv_file: UploadFile = File(...), current_user: dict = 
     success_count, errors = batch_import_cli_text(text)
     return RedirectResponse(url=f"/cli?import_success={success_count}&errors={len(errors)}", status_code=303)
 
+@app.post("/api/order/update")
+async def order_update_api(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+        
+    allowed_fields = ['order_no', 'order_date', 'inquiry_mpn', 'inquiry_brand', 'price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'paid_amount', 'return_status', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+        
+    if field in ['price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'paid_amount']:
+        try:
+            val = float(value)
+            success, msg = update_order(order_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_order(order_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/order/update_status")
+async def order_update_status_api(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    from Sills.db_order import update_order_status
+    success, msg = update_order_status(order_id, field, value)
+    return {"success": success, "message": msg}
+
 @app.post("/api/cli/update")
 async def cli_update_api(cli_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
@@ -365,8 +401,8 @@ async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(l
 
 # ---------------- Quote Module ----------------
 @app.get("/quote", response_class=HTMLResponse)
-async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
-    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id)
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", status: str = ""):
+    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status)
     total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
     return templates.TemplateResponse("quote.html", {
@@ -382,6 +418,8 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
         "start_date": start_date,
         "end_date": end_date,
         "cli_id": cli_id,
+        "status": status,
+        "search": search,
         "cli_list": cli_list
     })
 
@@ -431,9 +469,9 @@ async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), va
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无修改权限"}
         
-    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'target_price_rmb', 'cost_price_rmb', 'remark']
+    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'target_price_rmb', 'cost_price_rmb', 'date_code', 'delivery_date', 'status', 'remark']
     if field not in allowed_fields:
-        return {"success": False, "message": "非法字段"}
+        return {"success": False, "message": f"非法字段: {field}"}
         
     if field in ['inquiry_qty', 'target_price_rmb', 'cost_price_rmb']:
         try:
@@ -537,12 +575,31 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
     })
 
 @app.post("/offer/add")
-async def offer_add(request: Request, current_user: dict = Depends(login_required)):
+async def offer_add_route(request: Request, current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/offer", status_code=303)
     form = await request.form()
     data = dict(form)
-    ok, msg = add_offer(data, current_user['emp_id'])
+    data['emp_id'] = current_user['emp_id']
+    
+    # 自动报价逻辑：如果报价为 0 且指定了需求，则联动客户利润率
+    if (not data.get('offer_price_rmb') or float(data.get('offer_price_rmb')) == 0) and data.get('quote_id'):
+        from Sills.base import get_db_connection
+        with get_db_connection() as conn:
+            clip = conn.execute("""
+                SELECT c.margin_rate, q.cost_price_rmb 
+                FROM uni_quote q 
+                JOIN uni_cli c ON q.cli_id = c.cli_id 
+                WHERE q.quote_id = ?
+            """, (data['quote_id'],)).fetchone()
+            if clip and clip['cost_price_rmb']:
+                margin = float(clip['margin_rate'] or 10.0)
+                cost = float(clip['cost_price_rmb'])
+                data['offer_price_rmb'] = round(cost * (1 + margin / 100.0), 2)
+                if not data.get('cost_price_rmb') or float(data.get('cost_price_rmb')) == 0:
+                    data['cost_price_rmb'] = cost
+
+    ok, msg = add_offer(data)
     import urllib.parse
     msg_param = urllib.parse.quote(msg)
     success = 1 if ok else 0
@@ -584,11 +641,11 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         
     allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand', 
                       'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 
-                      'platform', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'remark']
+                      'price_kwr', 'price_usd', 'platform', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'remark']
     if field not in allowed_fields:
-        return {"success": False, "message": "非法字段"}
+        return {"success": False, "message": f"非法字段: {field}"}
         
-    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb']:
+    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 'price_kwr', 'price_usd']:
         try:
             val = float(value) if 'price' in field else int(value)
             success, msg = update_offer(offer_id, {field: val})
@@ -615,8 +672,61 @@ async def offer_batch_delete_api(request: Request, current_user: dict = Depends(
     success, msg = batch_delete_offer(ids)
     return {"success": success, "message": msg}
 
+@app.post("/api/offer/send_email")
+async def offer_send_email_api(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    id = data.get("id")
+    if not id:
+        return {"success": False, "message": "未指定报价编号"}
+        
+    from Sills.base import get_db_connection
+    with get_db_connection() as conn:
+        row = conn.execute("""
+            SELECT o.*, v.vendor_name, c.cli_name, c.contact_email 
+            FROM uni_offer o
+            LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE o.offer_id = ?
+        """, (id,)).fetchone()
+        
+    if not row:
+        return {"success": False, "message": "报价记录不存在"}
+        
+    r = dict(row)
+    # 构造邮件内容
+    subject = f"【UniUltra 报价单】型号: {r['quoted_mpn'] or r['inquiry_mpn']}"
+    body = f"""
+尊敬的客户 {r['cli_name'] or '您好'}:
+
+根据您的需求，我们为您提供如下报价：
+---------------------------------------------
+询价型号: {r['inquiry_mpn']}
+报价型号: {r['quoted_mpn'] or r['inquiry_mpn']}
+数量(pcs): {r['quoted_qty']}
+报价(RMB): {r['offer_price_rmb']}
+报价(KWR): {r['price_kwr']}
+报价(USD): {r['price_usd']}
+批号(DC): {r['date_code']}
+交期(LT): {r['delivery_date']}
+备注: {r['remark']}
+---------------------------------------------
+如有任何疑问，欢迎随时联系。
+
+此致,
+UniUltra 系统自动发送
+负责人: {current_user['user']}
+    """
+    
+    # 这里模拟发送邮件，后续可接入实际 SMTP
+    print(f"DEBUG: 正在向 {r['contact_email'] or '未知邮箱'} 发送邮件...")
+    print(f"DEBUG: 主题: {subject}")
+    
+    return {"success": True, "message": f"报价单 {id} 的邮件内容已生成并模拟发送给 {r['contact_email'] or '默认联系人'}。"}
+
 @app.post("/api/offer/export_csv")
 async def offer_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    
     data = await request.json()
     ids = data.get("ids", [])
     if not ids:
@@ -625,23 +735,38 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
     from Sills.base import get_db_connection
     placeholders = ','.join(['?'] * len(ids))
     with get_db_connection() as conn:
-        offers = conn.execute(f"SELECT * FROM uni_offer WHERE offer_id IN ({placeholders})", ids).fetchall()
+        # 联表查询以获取客户名和供应商名
+        query = f"""
+            SELECT o.*, v.vendor_name, c.cli_name 
+            FROM uni_offer o
+            LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE o.offer_id IN ({placeholders})
+        """
+        offers = conn.execute(query, ids).fetchall()
         
     import io, csv
     output = io.StringIO()
     output.write('\ufeff')
     writer = csv.writer(output)
-    writer.writerow(['报价编号','日期','需求编号','询价型号','报价型号','询价品牌','报价品牌','询价数量','实际数量','报价数量','成本价','报价','平台','供应商编号','批号','交期','报价语句','备注'])
+    writer.writerow(['报价编号','日期','客户名称','需求编号','询价型号','报价型号','询价品牌','报价品牌','询价数量','报价数量','成本价','报价(RMB)','报价(KWR)','报价(USD)','利润','总利润','平台','供应商','批号','交期','备注'])
     
     for row in offers:
         r = dict(row)
+        cost = float(r.get('cost_price_rmb') or 0.0)
+        price = float(r.get('offer_price_rmb') or 0.0)
+        qty = int(r.get('quoted_qty') or 0)
+        profit = price - cost
+        total_profit = profit * qty
+
         writer.writerow([
-            r.get('offer_id'), r.get('offer_date'), r.get('quote_id'),
+            r.get('offer_id'), r.get('offer_date'), r.get('cli_name'), r.get('quote_id'),
             r.get('inquiry_mpn'), r.get('quoted_mpn'), r.get('inquiry_brand'), r.get('quoted_brand'),
-            r.get('inquiry_qty'), r.get('actual_qty'), r.get('quoted_qty'),
-            r.get('cost_price_rmb'), r.get('offer_price_rmb'), r.get('platform'),
-            r.get('vendor_id'), r.get('date_code'), r.get('delivery_date'),
-            r.get('offer_statement'), r.get('remark')
+            r.get('inquiry_qty'), r.get('quoted_qty'),
+            cost, price, r.get('price_kwr'), r.get('price_usd'),
+            round(profit, 2), round(total_profit, 2),
+            r.get('platform'), r.get('vendor_name'), r.get('date_code'), r.get('delivery_date'), r.get('remark')
         ])
         
     return {"success": True, "csv_content": output.getvalue()}
@@ -755,16 +880,17 @@ async def buy_page(request: Request, current_user: dict = Depends(login_required
     results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id, is_shipped=is_shipped)
     total_pages = (total + page_size - 1) // page_size
     with get_db_connection() as conn:
-        vendors = conn.execute("SELECT vendor_id, vendor_name FROM uni_vendor").fetchall()
-        orders = conn.execute("SELECT order_id FROM uni_order").fetchall()
+        vendors = conn.execute("SELECT vendor_id, vendor_name, address FROM uni_vendor").fetchall()
+        orders = conn.execute("SELECT order_id, order_no FROM uni_order").fetchall()
         clis = conn.execute("SELECT cli_id, cli_name FROM uni_cli").fetchall()
+        vendor_addresses = {str(v['vendor_id']): (v['address'] or "") for v in vendors}
     return templates.TemplateResponse("buy.html", {
         "request": request, "active_page": "buy", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
         "total_pages": total_pages, "search": search, "order_id": order_id,
         "start_date": start_date, "end_date": end_date, "cli_id": cli_id,
         "vendor_list": vendors, "order_list": orders, "cli_list": clis,
-        "is_shipped": is_shipped
+        "is_shipped": is_shipped, "vendor_addresses": vendor_addresses
     })
 
 @app.post("/buy/import")
@@ -785,6 +911,26 @@ async def buy_import_text(batch_text: str = Form(None), csv_file: UploadFile = F
     err_msg = ""
     if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
     return RedirectResponse(url=f"/buy?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/buy/add")
+async def buy_add_route(
+    order_id: str = Form(...), vendor_id: str = Form(...),
+    buy_mpn: str = Form(...), buy_brand: str = Form(""),
+    buy_price_rmb: float = Form(...), buy_qty: int = Form(...),
+    sales_price_rmb: float = Form(0.0), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "order_id": order_id, "vendor_id": vendor_id,
+        "buy_mpn": buy_mpn, "buy_brand": buy_brand,
+        "buy_price_rmb": buy_price_rmb, "buy_qty": buy_qty,
+        "sales_price_rmb": sales_price_rmb, "remark": remark
+    }
+    ok, msg = add_buy(data)
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/buy?msg={msg_param}&success={success}", status_code=303)
 
 @app.post("/api/buy/update_node")
 async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
@@ -821,7 +967,7 @@ async def buy_export_csv(request: Request, current_user: dict = Depends(login_re
     placeholders = ','.join(['?'] * len(ids))
     with get_db_connection() as conn:
         buys = conn.execute(f"""
-            SELECT b.*, v.vendor_name, ord.order_id 
+            SELECT b.*, v.vendor_name, ord.order_no 
             FROM uni_buy b 
             LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id 
             LEFT JOIN uni_order ord ON b.order_id = ord.order_id
@@ -830,10 +976,10 @@ async def buy_export_csv(request: Request, current_user: dict = Depends(login_re
     import io, csv
     output = io.StringIO(); output.write('\ufeff')
     writer = csv.writer(output)
-    writer.writerow(['采购编号','日期','销售订单','供应商','型号','品牌','单价','数量','总额','是否货源','是否下单','是否入库','是否发货','备注'])
+    writer.writerow(['采购编号','日期','销售订单号','供应商','型号','品牌','单价','数量','总额','是否货源','是否下单','是否入库','是否发货','备注'])
     for r in buys:
         d = dict(r)
-        writer.writerow([d['buy_id'], d['buy_date'], d['order_id'], d['vendor_name'], d['buy_mpn'], d['buy_brand'], d['buy_price_rmb'], d['buy_qty'], d['total_amount'], d['is_source_confirmed'], d['is_ordered'], d['is_instock'], d['is_shipped'], d['remark']])
+        writer.writerow([d['buy_id'], d['buy_date'], d['order_no'] or '', d['vendor_name'], d['buy_mpn'], d['buy_brand'], d['buy_price_rmb'], d['buy_qty'], d['total_amount'], d['is_source_confirmed'], d['is_ordered'], d['is_instock'], d['is_shipped'], d['remark']])
     return {"success": True, "csv_content": output.getvalue()}
 # --- New Workflow API endpoints ---
 

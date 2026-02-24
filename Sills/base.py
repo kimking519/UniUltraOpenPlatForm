@@ -1,10 +1,17 @@
 import sqlite3
 import os
+from contextvars import ContextVar
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uni_platform.db")
+# 默认为开发环境库
+current_env: ContextVar[str] = ContextVar("current_env", default="dev")
+
+def get_db_path():
+    env = current_env.get()
+    filename = "uni_platform.db" if env == "prod" else "uni_platform_dev.db"
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), filename)
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
@@ -60,10 +67,14 @@ def init_db():
         inquiry_qty INTEGER,
         target_price_rmb REAL,
         cost_price_rmb REAL,
+        date_code TEXT,
+        delivery_date TEXT,
+        status TEXT DEFAULT '询价中',
         remark TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON UPDATE CASCADE
     );
+
 
     CREATE TABLE IF NOT EXISTS uni_vendor (
         vendor_id TEXT PRIMARY KEY,
@@ -89,6 +100,8 @@ def init_db():
         quoted_qty INTEGER,
         cost_price_rmb REAL,
         offer_price_rmb REAL,
+        price_kwr REAL,
+        price_usd REAL,
         platform TEXT,
         vendor_id TEXT,
         date_code TEXT,
@@ -105,14 +118,18 @@ def init_db():
 
     CREATE TABLE IF NOT EXISTS uni_order (
         order_id TEXT PRIMARY KEY,
+        order_no TEXT UNIQUE,
         order_date TEXT,
         cli_id TEXT NOT NULL,
         offer_id TEXT,
         inquiry_mpn TEXT,
         inquiry_brand TEXT,
+        price_kwr REAL,
+        price_usd REAL,
         is_finished INTEGER DEFAULT 0 CHECK(is_finished IN (0,1)),
         is_paid INTEGER DEFAULT 0 CHECK(is_paid IN (0,1)),
         paid_amount REAL DEFAULT 0.0,
+        return_status TEXT DEFAULT '正常',
         remark TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id),
@@ -140,14 +157,22 @@ def init_db():
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id)
     );
     """
-    with get_db_connection() as conn:
-        conn.executescript(schema)
-        # Seed default admin if not exists
-        conn.execute("""
-            INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule) 
-            VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
-        """)
-        conn.commit()
+    # 初始化两个环境的数据库
+    envs = ["prod", "dev"]
+    original_env = current_env.get()
+    try:
+        for env in envs:
+            current_env.set(env)
+            with get_db_connection() as conn:
+                conn.executescript(schema)
+                # Seed default admin if not exists
+                conn.execute("""
+                    INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule) 
+                    VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
+                """)
+                conn.commit()
+    finally:
+        current_env.set(original_env)
 
 def get_paginated_list(table_name, page=1, page_size=10, search_kwargs=None):
     """

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id=""):
+def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", status=""):
     offset = (page - 1) * page_size
     
     base_query = """
@@ -22,12 +22,17 @@ def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if cli_id:
         base_query += " AND q.cli_id = ?"
         params.append(cli_id)
+    if status:
+        base_query += " AND q.status = ?"
+        params.append(status)
         
     query = f"""
     SELECT q.*, c.cli_name, 
            (COALESCE(q.quoted_mpn, '') || ' | ' || 
             COALESCE(q.inquiry_brand, '') || ' | ' || 
-            COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' pcs | ' || 
+            COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' pcs | ' ||
+            COALESCE(q.date_code, '') || ' | ' ||
+            COALESCE(q.delivery_date, '') || ' | ' ||
             COALESCE(q.remark, '')) as combined_info
     {base_query}
     ORDER BY q.created_at DESC
@@ -52,8 +57,8 @@ def add_quote(data):
         quote_date = datetime.now().strftime("%Y-%m-%d")
         
         sql = """
-        INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, remark)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, date_code, delivery_date, status, remark)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             quote_id,
@@ -65,6 +70,9 @@ def add_quote(data):
             data.get('inquiry_qty', 0),
             data.get('target_price_rmb', 0.0),
             data.get('cost_price_rmb', 0.0),
+            data.get('date_code', ''),
+            data.get('delivery_date', ''),
+            data.get('status', '询价中'),
             data.get('remark', '')
         )
         with get_db_connection() as conn:
@@ -91,7 +99,10 @@ def batch_import_quote_text(text):
                 "inquiry_qty": int(parts[4]) if len(parts) > 4 and parts[4] else 0,
                 "target_price_rmb": float(parts[5]) if len(parts) > 5 and parts[5] else 0.0,
                 "cost_price_rmb": float(parts[6]) if len(parts) > 6 and parts[6] else 0.0,
-                "remark": parts[7] if len(parts) > 7 else ""
+                "date_code": parts[7] if len(parts) > 7 else "",
+                "delivery_date": parts[8] if len(parts) > 8 else "",
+                "status": parts[9] if len(parts) > 9 else "询价中",
+                "remark": parts[10] if len(parts) > 10 else ""
             }
             if not data["cli_id"] or not data["inquiry_mpn"]:
                 errors.append(f"{line}: 缺少必填的客户或型号")
@@ -189,8 +200,8 @@ def batch_copy_quote(quote_ids):
                     new_id = "Q" + datetime.now().strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:4]
                     d = dict(row)
                     sql = """
-                    INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, remark)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, date_code, delivery_date, status, remark)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
                     params = (
                         new_id,
@@ -202,6 +213,9 @@ def batch_copy_quote(quote_ids):
                         d.get('inquiry_qty'),
                         d.get('target_price_rmb'),
                         d.get('cost_price_rmb'),
+                        d.get('date_code'),
+                        d.get('delivery_date'),
+                        d.get('status'),
                         d.get('remark')
                     )
                     conn.execute(sql, params)

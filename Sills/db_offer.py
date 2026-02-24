@@ -36,7 +36,9 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             'Price: ' || COALESCE(CAST(o.offer_price_rmb AS TEXT), '') || ' | ' || 
             'DC: ' || COALESCE(o.date_code, '') || ' | ' || 
             'LeadTime: ' || COALESCE(o.delivery_date, '') || ' | ' || 
-            'Remark: ' || COALESCE(o.remark, '')) as combined_offer_info
+            'Remark: ' || COALESCE(o.remark, '')) as combined_offer_info,
+            ROUND(o.offer_price_rmb - o.cost_price_rmb, 3) as profit,
+            CAST(ROUND((o.offer_price_rmb - o.cost_price_rmb) * o.quoted_qty, 0) AS INTEGER) as total_profit
     {base_query}
     ORDER BY o.created_at DESC
     LIMIT ? OFFSET ?
@@ -54,25 +56,28 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             results.append({k: ("" if v is None else v) for k, v in d.items()})
 
         try:
-            rate_krw = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
-            rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
-            krw_val = float(rate_krw[0]) if rate_krw else 180.0
-            usd_val = float(rate_usd[0]) if rate_usd else 7.0
-            
-            for r in results:
-                price = r.get('offer_price_rmb') or 0.0
-                margin = float(r.get('margin_rate') or 0.0)
-                final_price = float(price) * (1 + margin / 100.0)
+            rate_krw_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            rate_usd_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_val = float(rate_krw_row[0]) if rate_krw_row else 180.0
+            usd_val = float(rate_usd_row[0]) if rate_usd_row else 7.0
+        except:
+            krw_val, usd_val = 180.0, 7.0
+
+        for r in results:
+            # 备注处理：将 | 替换为换行符用于前端 pre-line 显示
+            remark = r.get('remark') or ""
+            r['remark'] = remark.replace(' | ', '\n').replace('|', '\n')
                 
-                if krw_val > 10: r['price_kwr'] = round(final_price * krw_val, 2)
-                else: r['price_kwr'] = round(final_price / krw_val, 2) if krw_val else 0.0
-                    
-                if usd_val > 10: r['price_usd'] = round(final_price * usd_val, 2)
-                else: r['price_usd'] = round(final_price / usd_val, 2) if usd_val else 0.0
-        except Exception as e:
-            for r in results:
-                r['price_kwr'] = 0.0
-                r['price_usd'] = 0.0
+            # 动态重新计算汇率（保持实时性）
+            try:
+                offer_price = float(r.get('offer_price_rmb') or 0.0)
+                if krw_val > 10: r['price_kwr'] = round(offer_price * krw_val, 1)
+                else: r['price_kwr'] = round(offer_price / krw_val, 1) if krw_val else 0.0
+                
+                if usd_val > 10: r['price_usd'] = round(offer_price * usd_val, 2)
+                else: r['price_usd'] = round(offer_price / usd_val, 2) if usd_val else 0.0
+            except:
+                pass
 
         return results, total
 
@@ -146,6 +151,26 @@ def add_offer(data, emp_id, conn=None):
             try: offer_price = float(data.get('offer_price_rmb') or 0.0)
             except: pass
 
+            # Handle auto-calc based on margin
+            margin = 0.0
+            if quote_id:
+                margin_row = conn.execute("SELECT margin_rate FROM uni_cli c JOIN uni_quote q ON c.cli_id = q.cli_id WHERE q.quote_id = ?", (quote_id,)).fetchone()
+                if margin_row: margin = float(margin_row[0] or 0.0)
+
+            if cost_price > 0:
+                offer_price = cost_price * (1 + margin / 100.0)
+
+            rate_krw = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            rate_usd = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_val = float(rate_krw[0]) if rate_krw else 180.0
+            usd_val = float(rate_usd[0]) if rate_usd else 7.0
+            
+            if krw_val > 10: price_kwr = round(offer_price * krw_val, 1)
+            else: price_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
+
+            if usd_val > 10: price_usd = round(offer_price * usd_val, 2)
+            else: price_usd = round(offer_price / usd_val, 2) if usd_val else 0.0
+
             inquiry_mpn = data.get('inquiry_mpn', '')
             quoted_mpn = data.get('quoted_mpn', '')
             if not quoted_mpn: quoted_mpn = inquiry_mpn
@@ -157,9 +182,10 @@ def add_offer(data, emp_id, conn=None):
             sql = """
             INSERT INTO uni_offer (
                 offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
-                inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, platform,
+                inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, 
+                price_kwr, price_usd, platform,
                 vendor_id, date_code, delivery_date, emp_id, offer_statement, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 offer_id, offer_date, quote_id,
@@ -167,6 +193,7 @@ def add_offer(data, emp_id, conn=None):
                 inquiry_brand, quoted_brand,
                 inquiry_qty, actual_qty, quoted_qty,
                 cost_price, offer_price,
+                price_kwr, price_usd,
                 data.get('platform', ''),
                 vendor_id, data.get('date_code', ''),
                 data.get('delivery_date', ''), emp_id,

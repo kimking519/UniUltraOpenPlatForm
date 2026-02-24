@@ -1,17 +1,19 @@
 {% extends "layout.html" %}
 {% block content %}
-<div class="header-action">
+<div class="header-action"
+    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
     <h1>6. 销售订单管理</h1>
-    <div style="display: flex; gap: 1rem;">
-        <button class="btn btn-primary" onclick="batchToBuy()"
-            style="background: #3b82f6; color: white; border: 1px solid #3b82f6;">批量转采购单</button>
-        <button class="btn btn-primary" onclick="batchDelete()"
-            style="background: #ef4444; color: white; border: 1px solid #ef4444;">批量删除</button>
-        <button class="btn btn-primary" onclick="batchExport()"
-            style="background: #10b981; color: white; border: 1px solid #10b981;">导出选中为.csv</button>
+    <div style="display: flex; gap: 0.8rem; align-items: center; margin-left: auto;">
+        <button class="btn btn-primary" onclick="toggleModal('addModal')" style="font-size: 0.85rem;">+ 新增订单</button>
         <button class="btn btn-primary" onclick="toggleModal('importModal')"
-            style="background: var(--light); color: var(--text); border: 1px solid var(--border);">+ 批量导入</button>
-        <button class="btn btn-primary" onclick="toggleModal('addModal')">+ 新增订单</button>
+            style="background: var(--light); color: var(--text); border: 1px solid var(--border); font-size: 0.85rem;">+
+            批量导入</button>
+        <button class="btn btn-primary" onclick="batchConvertToBuy()"
+            style="background: #3b82f6; color: white; border: 1px solid #3b82f6; font-size: 0.85rem;">转为采购记录</button>
+        <button class="btn btn-primary" onclick="batchExport()"
+            style="background: #10b981; color: white; border: 1px solid #10b981; font-size: 0.85rem;">批量导出 CSV</button>
+        <button class="btn btn-primary" onclick="batchDelete()"
+            style="background: #ef4444; color: white; border: 1px solid #ef4444; font-size: 0.85rem;">批量删除</button>
     </div>
 </div>
 
@@ -49,11 +51,7 @@
     <button class="btn btn-primary" onclick="applyFilter()">查询</button>
 </div>
 
-<div class="batch-actions" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
-    <button class="btn" style="color: var(--primary);" onclick="batchConvertToBuy()">转为采购记录</button>
-    <button class="btn" onclick="batchExport()">批量导出 CSV</button>
-    <button class="btn" style="color: red;" onclick="batchDelete()">批量删除</button>
-</div>
+<!-- 删除中间重复的按钮栏 -->
 
 <div class="table-container">
     <table style="font-size: 0.85rem;">
@@ -61,58 +59,77 @@
             <tr>
                 <th><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
                 <th>订单编号</th>
-                <th>日期</th>
+                <th>订单日期</th>
                 <th>客户</th>
                 <th>报价编号</th>
                 <th>报价型号</th>
                 <th>品牌</th>
+                <th>报价(RMB)</th>
                 <th>报价(KWR)</th>
                 <th>报价(USD)</th>
-                <th>完结状态</th>
-                <th>付款状态</th>
+                <th>成本(RMB)</th>
+                <th>利润</th>
+                <th>退货状态</th>
+                <th>完结</th>
+                <th>付款</th>
                 <th>已付金额</th>
                 <th>备注</th>
                 <th>操作</th>
             </tr>
         </thead>
         <tbody>
-            {% for item in items %}
-            <tr data-id="{{ item.order_id }}">
-                <td><input type="checkbox" class="row-checkbox" value="{{ item.order_id }}"></td>
-                <td>{{ item.order_id }}</td>
-                <td>{{ item.order_date }}</td>
-                <td>{{ item.cli_name }}</td>
-                <td>{{ item.offer_id }}</td>
-                <td onclick="editField('{{ item.order_id }}', 'inquiry_mpn', '{{ item.inquiry_mpn }}')"
-                    style="cursor: pointer; color: var(--primary);">{{ item.inquiry_mpn }}</td>
-                <td onclick="editField('{{ item.order_id }}', 'inquiry_brand', '{{ item.inquiry_brand }}')"
-                    style="cursor: pointer; color: var(--primary);">{{ item.inquiry_brand }}</td>
-                <td><span style="color:var(--primary);">{{ item.price_kwr }}</span></td>
-                <td><span style="color:var(--primary);">{{ item.price_usd }}</span></td>
+            {% for row in items %}
+            <tr data-id="{{ row.order_id }}">
+                <td><input type="checkbox" class="row-checkbox" value="{{ row.order_id }}"></td>
+                <td onclick="editField('{{ row.order_id }}', 'order_no', '{{ row.order_no or row.order_id }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.order_no or row.order_id }}</td>
+                <td>{{ row.order_date }}</td>
+                <td>{{ row.cli_name }}</td>
+                <td>{{ row.offer_id }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'inquiry_mpn', '{{ row.inquiry_mpn }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.inquiry_mpn }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'inquiry_brand', '{{ row.inquiry_brand }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.inquiry_brand }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'price_rmb', '{{ row.price_rmb }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.price_rmb }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'price_kwr', '{{ row.price_kwr }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.price_kwr }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'price_usd', '{{ row.price_usd }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.price_usd }}</td>
+                <td onclick="editField('{{ row.order_id }}', 'cost_price_rmb', '{{ row.cost_price_rmb }}')"
+                    style="cursor: pointer; color: var(--primary);">{{ row.cost_price_rmb }}</td>
+                <td><span style="color: green;">{{ row.profit }}</span></td>
+                <td>
+                    <select onchange="updateRowField('{{ row.order_id }}', 'return_status', this.value)"
+                        style="padding: 2px;">
+                        <option value="正常" {% if row.return_status=='正常' %}selected{% endif %}>正常</option>
+                        <option value="已退货" {% if row.return_status=='已退货' %}selected{% endif %}>已退货</option>
+                    </select>
+                </td>
                 <td>
                     <label class="switch">
-                        <input type="checkbox" {% if item.is_finished==1 %}checked{% endif %}
-                            onchange="toggleStatus('{{ item.order_id }}', 'is_finished', this.checked)">
+                        <input type="checkbox" {% if row.is_finished==1 %}checked{% endif %}
+                            onchange="toggleStatus('{{ row.order_id }}', 'is_finished', this.checked)">
                         <span class="slider"></span>
                     </label>
                 </td>
                 <td>
                     <label class="switch">
-                        <input type="checkbox" {% if item.is_paid==1 %}checked{% endif %}
-                            onchange="toggleStatus('{{ item.order_id }}', 'is_paid', this.checked)">
+                        <input type="checkbox" {% if row.is_paid==1 %}checked{% endif %}
+                            onchange="toggleStatus('{{ row.order_id }}', 'is_paid', this.checked)">
                         <span class="slider"></span>
                     </label>
                 </td>
-                <td onclick="editField('{{ item.order_id }}', 'paid_amount', '{{ item.paid_amount }}')"
+                <td onclick="editField('{{ row.order_id }}', 'paid_amount', '{{ row.paid_amount }}')"
                     style="cursor: pointer; color: var(--primary);">
-                    {{ item.paid_amount }}
+                    {{ row.paid_amount }}
                 </td>
-                <td onclick="editField('{{ item.order_id }}', 'remark', '{{ item.remark }}')" style="cursor: pointer;">
-                    {{ item.remark }}
+                <td onclick="editField('{{ row.order_id }}', 'remark', '{{ row.remark }}')" style="cursor: pointer;">
+                    {{ row.remark }}
                 </td>
                 <td>
                     <button class="btn" style="color: red; padding: 2px 8px;"
-                        onclick="deleteOrder('{{ item.order_id }}')">删除</button>
+                        onclick="deleteOrder('{{ row.order_id }}')">删除</button>
                 </td>
             </tr>
             {% endfor %}
@@ -271,7 +288,8 @@
         const search = document.getElementById('search_input').value;
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
-        window.location.href = `/order?cli_id=${cli}&search=${search}&start_date=${start}&end_date=${end}`;
+        const finished = document.getElementById('filter_finished').value;
+        window.location.href = `/order?cli_id=${cli}&search=${search}&start_date=${start}&end_date=${end}&is_finished=${finished}`;
     }
 
     function toggleSelectAll(checked) {
@@ -318,6 +336,17 @@
         } else alert(res.message);
     }
 
+    async function updateRowField(orderId, field, value) {
+        const formData = new FormData();
+        formData.append('order_id', orderId);
+        formData.append('field', field);
+        formData.append('value', value);
+
+        const resp = await fetch('/api/order/update', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (!res.success) alert(res.message);
+    }
+
     async function toggleStatus(orderId, field, value) {
         const formData = new FormData();
         formData.append('order_id', orderId);
@@ -351,6 +380,21 @@
         const resp = await fetch('/api/order/delete', { method: 'POST', body: formData });
         const res = await resp.json();
         if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    async function batchConvertToBuy() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要转采购的记录');
+        if (!confirm(`确定将选中的 ${ids.length} 个订单转为采购记录吗？`)) return;
+
+        const resp = await fetch('/api/order/batch_to_buy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const res = await resp.json();
+        if (res.success) alert('成功转为采购记录');
         else alert(res.message);
     }
 </script>
