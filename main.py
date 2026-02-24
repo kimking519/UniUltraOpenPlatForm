@@ -13,6 +13,10 @@ from Sills.db_order import get_order_list, add_order, update_order_status, updat
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 
 import uvicorn
+import shutil
+import os
+import platform
+from datetime import datetime
 
 app = FastAPI()
 
@@ -863,6 +867,53 @@ async def api_order_batch_to_buy(data: dict, current_user: dict = Depends(login_
         return {"success": ok, "message": msg}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return RedirectResponse(url="/", status_code=303)
+        
+    # Get backup path info
+    is_windows = platform.system() == "Windows"
+    backup_root = r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else os.path.expanduser("~/")
+    
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "active_page": "settings",
+        "current_user": current_user,
+        "backup_path": backup_root
+    })
+
+@app.post("/api/backup")
+async def api_backup(current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可执行备份"}
+        
+    try:
+        is_windows = platform.system() == "Windows"
+        backup_root = r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else os.path.expanduser("~/")
+        
+        # Create day folder
+        date_str = datetime.now().strftime("%Y%m%d")
+        backup_dir = os.path.join(backup_root, f"backup_{date_str}")
+        
+        # If exists, delete and recreate
+        if os.path.exists(backup_dir):
+            shutil.rmtree(backup_dir)
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Copy all .db files from project root
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        db_files = [f for f in os.listdir(project_root) if f.endswith(".db")]
+        
+        for db_file in db_files:
+            src = os.path.join(project_root, db_file)
+            dst = os.path.join(backup_dir, db_file)
+            shutil.copy2(src, dst)
+            
+        return {"success": True, "message": f"备份成功！已备份 {len(db_files)} 个数据库文件到 {backup_dir}"}
+    except Exception as e:
+        return {"success": False, "message": f"备份失败: {str(e)}"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
