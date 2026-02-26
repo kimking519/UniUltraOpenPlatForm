@@ -233,8 +233,12 @@ def batch_convert_from_order(order_ids):
                     data['buy_price_rmb'] = offer_info['cost_price_rmb']
 
                 ok, msg = add_buy(data, conn=conn)
-                if ok: success_count += 1
-                else: errors.append(msg)
+                if ok: 
+                    success_count += 1
+                    # Update source order status
+                    conn.execute("UPDATE uni_order SET is_transferred = '已转' WHERE order_id = ?", (order_data['order_id'],))
+                else: 
+                    errors.append(msg)
             
             if success_count > 0:
                 conn.commit()

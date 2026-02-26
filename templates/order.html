@@ -37,6 +37,14 @@
         </select>
     </div>
     <div>
+        <label>已转</label>
+        <select id="filter_transferred" onchange="applyFilter()" style="padding: 0.4rem;">
+            <option value="">全部</option>
+            <option value="未转" {% if is_transferred=='未转' %}selected{% endif %}>未转</option>
+            <option value="已转" {% if is_transferred=='已转' %}selected{% endif %}>已转</option>
+        </select>
+    </div>
+    <div>
         <label>日期从</label>
         <input type="date" id="start_date" value="{{ start_date }}" style="padding: 0.4rem;">
     </div>
@@ -73,6 +81,7 @@
                 <th>完结</th>
                 <th>付款</th>
                 <th>已付金额</th>
+                <th>已转</th>
                 <th>备注</th>
                 <th>操作</th>
             </tr>
@@ -123,6 +132,12 @@
                 <td onclick="editField('{{ row.order_id }}', 'paid_amount', '{{ row.paid_amount }}')"
                     style="cursor: pointer; color: var(--primary);">
                     {{ row.paid_amount }}
+                </td>
+                <td ondblclick="makeTransferredEditable(this, '{{ row.order_id }}', '{{ row.is_transferred }}')">
+                    <span
+                        class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
+                        {{ row.is_transferred }}
+                    </span>
                 </td>
                 <td onclick="editField('{{ row.order_id }}', 'remark', '{{ row.remark }}')" style="cursor: pointer;">
                     {{ row.remark }}
@@ -289,7 +304,65 @@
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
         const finished = document.getElementById('filter_finished').value;
-        window.location.href = `/order?cli_id=${cli}&search=${search}&start_date=${start}&end_date=${end}&is_finished=${finished}`;
+        const transferred = document.getElementById('filter_transferred').value;
+        window.location.href = `/order?cli_id=${cli}&search=${search}&start_date=${start}&end_date=${end}&is_finished=${finished}&is_transferred=${transferred}`;
+    }
+
+    function makeTransferredEditable(element, id, currentValue) {
+        if (element.querySelector('select')) return;
+
+        const select = document.createElement('select');
+        select.style.width = '100%';
+        select.style.padding = '2px';
+
+        const options = ['未转', '已转'];
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.text = opt;
+            if (opt === currentValue) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const span = element.querySelector('span');
+        element.innerHTML = '';
+        element.appendChild(select);
+        select.focus();
+
+        const updateValue = () => {
+            const newValue = select.value;
+            if (newValue === currentValue) {
+                element.innerHTML = '';
+                element.appendChild(span);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('order_id', id);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+
+            fetch('/api/order/update', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                        span.className = `badge ${newValue === '已转' ? 'badge-success' : 'badge-warning'}`;
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    } else {
+                        alert('更新失败: ' + data.message);
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    }
+                });
+        };
+
+        select.onblur = updateValue;
+        select.onchange = updateValue;
     }
 
     function toggleSelectAll(checked) {

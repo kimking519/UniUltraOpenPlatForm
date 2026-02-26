@@ -70,6 +70,26 @@ body {
     padding-left: 2.5rem;
 }
 
+.submenu {
+    display: none;
+    flex-direction: column;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.submenu.open {
+    display: flex;
+}
+
+.submenu-item {
+    font-size: 0.9rem;
+    padding-left: 3.5rem;
+}
+
+.submenu-item:hover,
+.submenu-item.active {
+    padding-left: 4rem;
+}
+
 /* Main Content */
 .main-content {
     flex: 1;
@@ -315,6 +335,11 @@ input:checked+.slider:before {
     width: 16px;
     height: 16px;
     color: var(--secondary);
+    transition: transform 0.3s;
+}
+
+.chevron-icon.rotated {
+    transform: rotate(180deg);
 }
 
 .dropdown-menu {

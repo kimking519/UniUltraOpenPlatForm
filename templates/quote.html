@@ -49,6 +49,12 @@
             <option value="缺货" {% if status=='缺货' %}selected{% endif %}>缺货</option>
             <option value="已报价" {% if status=='已报价' %}selected{% endif %}>已报价</option>
         </select>
+        <select name="is_transferred"
+            style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; min-width: 100px;">
+            <option value="">全部</option>
+            <option value="未转" {% if is_transferred=='未转' %}selected{% endif %}>未转</option>
+            <option value="已转" {% if is_transferred=='已转' %}selected{% endif %}>已转</option>
+        </select>
         <button type="submit" class="btn btn-primary">搜索 / 过滤</button>
         {% if search or start_date or end_date or status %}
         <button type="button" class="btn"
@@ -79,6 +85,7 @@
                     <th style="min-width: 100px;">批号</th>
                     <th style="min-width: 100px;">交期</th>
                     <th style="min-width: 100px;">状态</th>
+                    <th style="min-width: 80px;">已转</th>
                     <th style="min-width: 250px;">需求组合信息 (系统自动汇总)</th>
                     <th style="min-width: 150px;">备注</th>
                     {% if current_user.rule == '3' %}
@@ -122,6 +129,12 @@
                             {{ row.status }}
                         </span>
                     </td>
+                    <td ondblclick="makeTransferredEditable(this, '{{ row.quote_id }}', '{{ row.is_transferred }}')">
+                        <span
+                            class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ row.is_transferred }}
+                        </span>
+                    </td>
                     <td style="color: var(--secondary); font-size: 0.85rem;">{{ row.combined_info }}</td>
                     <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'remark')"><span>{{ row.remark }}</span>
                     </td>
@@ -133,6 +146,7 @@
                     <td>{{ row.inquiry_qty }}</td>
                     <td>{{ row.target_price_rmb }}</td>
                     <td>{{ row.cost_price_rmb }}</td>
+                    <td>{{ row.is_transferred }}</td>
                     <td style="color: var(--secondary); font-size: 0.85rem;">{{ row.combined_info }}</td>
                     <td>{{ row.remark }}</td>
                     {% endif %}
@@ -584,6 +598,63 @@
                     else alert('批量复制失败: ' + data.message);
                 });
         }
+    }
+
+    function makeTransferredEditable(element, id, currentValue) {
+        if (element.querySelector('select')) return;
+
+        const select = document.createElement('select');
+        select.style.width = '100%';
+        select.style.padding = '2px';
+
+        const options = ['未转', '已转'];
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.text = opt;
+            if (opt === currentValue) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const span = element.querySelector('span');
+        element.innerHTML = '';
+        element.appendChild(select);
+        select.focus();
+
+        const updateValue = () => {
+            const newValue = select.value;
+            if (newValue === currentValue) {
+                element.innerHTML = '';
+                element.appendChild(span);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('quote_id', id);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+
+            fetch('/api/quote/update', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                        span.className = `badge ${newValue === '已转' ? 'badge-success' : 'badge-warning'}`;
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    } else {
+                        alert('更新失败: ' + data.message);
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    }
+                });
+        };
+
+        select.onblur = updateValue;
+        select.onchange = updateValue;
     }
 </script>
 {% endblock %}

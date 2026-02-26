@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id=""):
+def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", is_transferred=""):
     offset = (page - 1) * page_size
     
     base_query = """
@@ -27,6 +27,9 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if cli_id:
         base_query += " AND q.cli_id = ?"
         params.append(cli_id)
+    if is_transferred:
+        base_query += " AND o.is_transferred = ?"
+        params.append(is_transferred)
         
     query = f"""
     SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.margin_rate,
@@ -36,6 +39,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             'Price: ' || COALESCE(CAST(o.offer_price_rmb AS TEXT), '') || ' | ' || 
             'DC: ' || COALESCE(o.date_code, '') || ' | ' || 
             'LeadTime: ' || COALESCE(o.delivery_date, '') || ' | ' || 
+            'Transferred: ' || COALESCE(o.is_transferred, '未转') || ' | ' || 
             'Remark: ' || COALESCE(o.remark, '')) as combined_offer_info,
             ROUND(o.offer_price_rmb - o.cost_price_rmb, 3) as profit,
             CAST(ROUND((o.offer_price_rmb - o.cost_price_rmb) * o.quoted_qty, 0) AS INTEGER) as total_profit
@@ -184,8 +188,8 @@ def add_offer(data, emp_id, conn=None):
                 offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
                 inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, 
                 price_kwr, price_usd, platform,
-                vendor_id, date_code, delivery_date, emp_id, offer_statement, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                vendor_id, date_code, delivery_date, emp_id, offer_statement, remark, is_transferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 offer_id, offer_date, quote_id,
@@ -197,7 +201,8 @@ def add_offer(data, emp_id, conn=None):
                 data.get('platform', ''),
                 vendor_id, data.get('date_code', ''),
                 data.get('delivery_date', ''), emp_id,
-                data.get('offer_statement', ''), data.get('remark', '')
+                data.get('offer_statement', ''), data.get('remark', ''),
+                data.get('is_transferred', '未转')
             )
             conn.execute(sql, params)
             if must_close:
@@ -336,6 +341,8 @@ def batch_convert_from_quote(quote_ids, emp_id):
                 ok, msg = add_offer(data, emp_id, conn=conn)
                 if ok: 
                     success_count += 1
+                    # Update source quote status
+                    conn.execute("UPDATE uni_quote SET is_transferred = '已转' WHERE quote_id = ?", (data['quote_id'],))
                 else: 
                     errors.append(msg)
             

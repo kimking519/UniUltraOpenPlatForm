@@ -46,6 +46,12 @@
             <option value="100" {% if page_size==100 %}selected{% endif %}>100条/页</option>
         </select>
         <button type="submit" class="btn btn-primary">搜索 / 过滤</button>
+        <select name="is_transferred"
+            style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; min-width: 100px;">
+            <option value="">全部</option>
+            <option value="未转" {% if is_transferred=='未转' %}selected{% endif %}>未转</option>
+            <option value="已转" {% if is_transferred=='已转' %}selected{% endif %}>已转</option>
+        </select>
         {% if search or start_date or end_date %}
         <a href="/offer" class="btn"
             style="background: var(--light); color: var(--secondary); text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px;">清除</a>
@@ -83,6 +89,7 @@
                     <th style="min-width: 80px;">批号(DC)</th>
                     <th style="min-width: 150px;">交期(LT)</th>
                     <th style="min-width: 80px;">负责人</th>
+                    <th style="min-width: 80px;">已转</th>
                     <th style="min-width: 350px;">拼接信息</th>
                     <th style="min-width: 200px;">备注</th>
                     {% if current_user.rule == '3' %}
@@ -142,6 +149,12 @@
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'delivery_date')"><span>{{
                             row.delivery_date }}</span></td>
                     <td>{{ row.emp_name }}</td>
+                    <td ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
+                        <span
+                            class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ row.is_transferred }}
+                        </span>
+                    </td>
                     <td style="font-size: 0.85rem; color: var(--secondary); background: #f8fafc;">{{
                         row.combined_offer_info }}</td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'remark')" style="white-space: pre-line;">
@@ -629,6 +642,63 @@
             console.error('Error:', error);
             alert('请求失败，请稍后重试');
         }
+    }
+
+    function makeTransferredEditable(element, id, currentValue) {
+        if (element.querySelector('select')) return;
+
+        const select = document.createElement('select');
+        select.style.width = '100%';
+        select.style.padding = '2px';
+
+        const options = ['未转', '已转'];
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.text = opt;
+            if (opt === currentValue) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const span = element.querySelector('span');
+        element.innerHTML = '';
+        element.appendChild(select);
+        select.focus();
+
+        const updateValue = () => {
+            const newValue = select.value;
+            if (newValue === currentValue) {
+                element.innerHTML = '';
+                element.appendChild(span);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('offer_id', id);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+
+            fetch('/api/offer/update', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                        span.className = `badge ${newValue === '已转' ? 'badge-success' : 'badge-warning'}`;
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    } else {
+                        alert('更新失败: ' + data.message);
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    }
+                });
+        };
+
+        select.onblur = updateValue;
+        select.onchange = updateValue;
     }
 </script>
 {% endblock %}

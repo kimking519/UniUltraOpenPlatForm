@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UniUltra 开放平台</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}?v=1.2">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 </head>
 
@@ -14,14 +14,32 @@
         <div class="sidebar-header">UniUltra</div>
         <nav class="sidebar-menu">
             <a href="/" class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">总控制台</a>
-            <a href="/daily" class="menu-item {% if active_page == 'daily' %}active{% endif %}">1. 动态参数</a>
-            <a href="/emp" class="menu-item {% if active_page == 'emp' %}active{% endif %}">2. 员工管理</a>
-            <a href="/cli" class="menu-item {% if active_page == 'cli' %}active{% endif %}">3. 客户表</a>
-            <a href="/quote" class="menu-item {% if active_page == 'quote' %}active{% endif %}">4. 需求管理</a>
-            <a href="/vendor" class="menu-item {% if active_page == 'vendor' %}active{% endif %}">5. 供应商表</a>
-            <a href="/offer" class="menu-item {% if active_page == 'offer' %}active{% endif %}">6. 报价订单</a>
-            <a href="/order" class="menu-item {% if active_page == 'order' %}active{% endif %}">7. 销售订单</a>
-            <a href="/buy" class="menu-item {% if active_page == 'buy' %}active{% endif %}">8. 采购管理</a>
+            <a href="/quote" class="menu-item {% if active_page == 'quote' %}active{% endif %}">需求管理</a>
+
+            <a href="/offer" class="menu-item {% if active_page == 'offer' %}active{% endif %}">报价订单</a>
+            <a href="/order" class="menu-item {% if active_page == 'order' %}active{% endif %}">销售订单</a>
+            <a href="/buy" class="menu-item {% if active_page == 'buy' %}active{% endif %}">采购管理</a>
+
+            <div class="menu-group">
+                <a href="#" class="menu-item group-title" onclick="toggleSubmenu('config-menu', event)">
+                    <span style="flex: 1;">配置</span>
+                    <svg class="chevron-icon" style="transition: transform 0.3s;" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </a>
+                <div id="config-menu" class="submenu">
+                    <a href="/daily"
+                        class="menu-item submenu-item {% if active_page == 'daily' %}active{% endif %}">动态参数</a>
+                    <a href="/emp"
+                        class="menu-item submenu-item {% if active_page == 'emp' %}active{% endif %}">员工管理</a>
+                    <a href="/cli" class="menu-item submenu-item {% if active_page == 'cli' %}active{% endif %}">客户表</a>
+                    <a href="/vendor"
+                        class="menu-item submenu-item {% if active_page == 'vendor' %}active{% endif %}">供应商表</a>
+                </div>
+            </div>
         </nav>
     </div>
 
@@ -138,6 +156,19 @@
 
         // Initialize on load
         updateEnvUI();
+
+        function toggleSubmenu(id, event) {
+            event.preventDefault();
+            const submenu = document.getElementById(id);
+            const icon = event.currentTarget.querySelector('.chevron-icon');
+            if (submenu.classList.contains('open')) {
+                submenu.classList.remove('open');
+                if (icon) icon.classList.remove('rotated');
+            } else {
+                submenu.classList.add('open');
+                if (icon) icon.classList.add('rotated');
+            }
+        }
     </script>
 </body>
 

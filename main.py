@@ -12,6 +12,7 @@ from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, u
 from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 
+from typing import Optional
 import uvicorn
 import shutil
 import os
@@ -411,8 +412,13 @@ async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(l
 
 # ---------------- Quote Module ----------------
 @app.get("/quote", response_class=HTMLResponse)
-async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", status: str = ""):
-    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status)
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", status: str = None, is_transferred: str = ""):
+    # Only default to "询价中" if status is strictly None (initial load without parameters)
+    if status is None and not search:
+        status = "询价中"
+    elif status is None:
+        status = ""
+    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status, is_transferred=is_transferred)
     total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
     return templates.TemplateResponse("quote.html", {
@@ -429,7 +435,7 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
         "end_date": end_date,
         "cli_id": cli_id,
         "status": status,
-        "search": search,
+        "is_transferred": request.query_params.get("is_transferred", ""),
         "cli_list": cli_list
     })
 
@@ -479,7 +485,7 @@ async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), va
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无修改权限"}
         
-    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'target_price_rmb', 'cost_price_rmb', 'date_code', 'delivery_date', 'status', 'remark']
+    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'target_price_rmb', 'cost_price_rmb', 'date_code', 'delivery_date', 'status', 'is_transferred', 'remark']
     if field not in allowed_fields:
         return {"success": False, "message": f"非法字段: {field}"}
         
@@ -559,8 +565,10 @@ async def quote_export_offer_csv(request: Request, current_user: dict = Depends(
 
 # ---------------- Offer Module ----------------
 @app.get("/offer", response_class=HTMLResponse)
-async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = ""):
-    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id)
+async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_transferred: str = ""):
+    if not start_date:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, is_transferred=is_transferred)
     total_pages = (total + page_size - 1) // page_size
     from Sills.base import get_paginated_list
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
@@ -580,6 +588,7 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
         "start_date": start_date,
         "end_date": end_date,
         "cli_id": cli_id,
+        "is_transferred": request.query_params.get("is_transferred", ""),
         "vendor_list": vendor_list,
         "cli_list": cli_list
     })
@@ -651,7 +660,7 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         
     allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand', 
                       'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 
-                      'price_kwr', 'price_usd', 'platform', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'remark']
+                      'price_kwr', 'price_usd', 'platform', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark']
     if field not in allowed_fields:
         return {"success": False, "message": f"非法字段: {field}"}
         
@@ -875,8 +884,12 @@ Remark: {r['remark']}
     }
 
 @app.get("/order", response_class=HTMLResponse)
-async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_finished: str = ""):
-    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date, is_finished=is_finished)
+async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_finished: str = "", is_transferred: str = ""):
+    if not start_date:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+    if not is_finished and not search:
+        is_finished = "0"
+    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date, is_finished=is_finished, is_transferred=is_transferred)
     total_pages = (total + page_size - 1) // page_size
     from Sills.db_cli import get_cli_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
@@ -885,7 +898,8 @@ async def order_page(request: Request, current_user: dict = Depends(login_requir
         "items": results, "total": total, "page": page, "page_size": page_size,
         "total_pages": total_pages, "search": search, "cli_id": cli_id, 
         "start_date": start_date, "end_date": end_date, "cli_list": cli_list,
-        "is_finished": is_finished
+        "is_finished": is_finished,
+        "is_transferred": request.query_params.get("is_transferred", "")
     })
 
 @app.post("/order/add")
@@ -936,6 +950,11 @@ async def api_order_update(order_id: str = Form(...), field: str = Form(...), va
     if field in ['paid_amount']:
         try: value = float(value)
         except: return {"success": False, "message": "必须是数字"}
+    
+    allowed_fields = ['order_no', 'order_date', 'cli_id', 'offer_id', 'inquiry_mpn', 'inquiry_brand', 'price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'is_finished', 'is_paid', 'paid_amount', 'return_status', 'remark', 'is_transferred']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+
     ok, msg = update_order(order_id, {field: value})
     return {"success": ok, "message": msg}
 
@@ -980,6 +999,10 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
 
 @app.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_shipped: str = ""):
+    if not start_date:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+    if not is_shipped and not search:
+        is_shipped = "0"
     results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id, is_shipped=is_shipped)
     total_pages = (total + page_size - 1) // page_size
     with get_db_connection() as conn:
@@ -1043,9 +1066,14 @@ async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), v
 
 @app.post("/api/buy/update")
 async def api_buy_update(buy_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    allowed_fields = ['order_id', 'vendor_id', 'buy_mpn', 'buy_brand', 'buy_price_rmb', 'buy_qty', 'sales_price_rmb', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
     from Sills.db_buy import update_buy
-    ok, msg = update_buy(buy_id, {field: value})
-    return {"success": ok, "message": msg}
+    success, msg = update_buy(buy_id, {field: value})
+    return {"success": success, "message": msg}
 
 @app.post("/api/buy/delete")
 async def api_buy_delete(buy_id: str = Form(...), current_user: dict = Depends(login_required)):

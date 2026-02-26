@@ -156,7 +156,7 @@
         input.focus();
 
         input.onblur = function () {
-            const newValue = input.value;
+            const newValue = input.value.trim();
             if (newValue === originalValue) {
                 td.innerHTML = isSpan ? `<span style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${originalValue}</span>` : originalValue;
                 return;

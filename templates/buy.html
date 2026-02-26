@@ -76,7 +76,8 @@
                 <th>型号</th>
                 <th>品牌</th>
                 <th>采购单价(RMB)</th>
-                <th>报价(KWR)</th>
+                <th>销售报价(RMB)</th>
+                <th>采购单价(KWR)</th>
                 <th>报价(USD)</th>
                 <th>数量</th>
                 <th>总额 (RMB)</th>
@@ -90,7 +91,7 @@
                 <td><input type="checkbox" class="row-checkbox" value="{{ item.buy_id }}"></td>
                 <td>{{ item.buy_id }}</td>
                 <td>{{ item.buy_date }}</td>
-                <td>{{ item.order_no }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'order_id')">{{ item.order_no }}</td>
                 <td>{{ item.cli_id }}</td>
                 <td>{{ item.cli_name }}</td>
                 <td style="min-width: 140px;">
@@ -105,15 +106,17 @@
                 </td>
                 <td id="addr-{{ item.buy_id }}" style="font-size: 0.75rem; color: #666; max-width: 200px;">{{
                     item.vendor_address }}</td>
-                <td onclick="editField('{{ item.buy_id }}', 'buy_mpn', '{{ item.buy_mpn }}')"
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_mpn')"
                     style="cursor: pointer; color: var(--primary);">{{ item.buy_mpn }}</td>
-                <td onclick="editField('{{ item.buy_id }}', 'buy_brand', '{{ item.buy_brand }}')"
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_brand')"
                     style="cursor: pointer; color: var(--primary);">{{ item.buy_brand }}</td>
-                <td onclick="editField('{{ item.buy_id }}', 'buy_price_rmb', '{{ item.buy_price_rmb }}')"
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_price_rmb')"
                     style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_price_rmb }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'sales_price_rmb')"
+                    style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.sales_price_rmb }}</td>
                 <td><span style="color:var(--primary);">{{ item.price_kwr }}</span></td>
                 <td><span style="color:var(--primary);">{{ item.price_usd }}</span></td>
-                <td onclick="editField('{{ item.buy_id }}', 'buy_qty', '{{ item.buy_qty }}')"
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_qty')"
                     style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_qty }}</td>
                 <td style="font-weight: 700;">{{ item.total_amount }}</td>
                 <td>
@@ -370,8 +373,20 @@
         }
     }
 
-    async function editField(buyId, field, currentVal) {
-        const newVal = prompt(`修改 ${field}:`, currentVal);
+    async function editField(td, buyId, field) {
+        const fieldMap = {
+            'order_id': '销售订单',
+            'buy_mpn': '采购型号',
+            'buy_brand': '采购品牌',
+            'buy_price_rmb': '采购单价(RMB)',
+            'sales_price_rmb': '销售建议报价(RMB)',
+            'buy_qty': '数量',
+            'total_amount': '总额',
+            'remark': '备注'
+        };
+        const label = fieldMap[field] || field;
+        const currentVal = td.innerText.trim();
+        const newVal = prompt(`修改 ${label}:`, currentVal);
         if (newVal === null || newVal === currentVal) return;
 
         const formData = new FormData();

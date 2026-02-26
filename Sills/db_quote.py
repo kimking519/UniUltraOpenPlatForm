@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from Sills.base import get_db_connection
 
-def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", status=""):
+def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", status="", is_transferred=""):
     offset = (page - 1) * page_size
     
     base_query = """
@@ -25,6 +25,9 @@ def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if status:
         base_query += " AND q.status = ?"
         params.append(status)
+    if is_transferred:
+        base_query += " AND q.is_transferred = ?"
+        params.append(is_transferred)
         
     query = f"""
     SELECT q.*, c.cli_name, 
@@ -33,6 +36,7 @@ def get_quote_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             COALESCE(CAST(q.inquiry_qty AS TEXT), '') || ' pcs | ' ||
             COALESCE(q.date_code, '') || ' | ' ||
             COALESCE(q.delivery_date, '') || ' | ' ||
+            COALESCE(q.is_transferred, '未转') || ' | ' || 
             COALESCE(q.remark, '')) as combined_info
     {base_query}
     ORDER BY q.created_at DESC
@@ -55,10 +59,9 @@ def add_quote(data):
     try:
         quote_id = "Q" + datetime.now().strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:4]
         quote_date = datetime.now().strftime("%Y-%m-%d")
-        
         sql = """
-        INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, date_code, delivery_date, status, remark)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO uni_quote (quote_id, quote_date, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, inquiry_qty, target_price_rmb, cost_price_rmb, date_code, delivery_date, status, remark, is_transferred)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '未转')
         """
         params = (
             quote_id,

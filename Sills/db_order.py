@@ -30,7 +30,7 @@ def generate_order_no(cli_name=""):
         except:
             return f"{prefix}-01"
 
-def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="", end_date="", is_finished=""):
+def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="", end_date="", is_finished="", is_transferred=""):
     offset = (page - 1) * page_size
     query = """
     FROM uni_order o
@@ -52,6 +52,9 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
     if is_finished in ('0', '1'):
         query += " AND o.is_finished = ?"
         params.append(int(is_finished))
+    if is_transferred:
+        query += " AND o.is_transferred = ?"
+        params.append(is_transferred)
 
     count_sql = "SELECT COUNT(*) " + query
     data_sql = "SELECT o.*, c.cli_name, c.margin_rate, off.quoted_mpn, off.offer_price_rmb, off.cost_price_rmb AS source_cost, off.quoted_qty " + query + " ORDER BY o.order_date DESC, o.created_at DESC LIMIT ? OFFSET ?"
@@ -147,8 +150,8 @@ def add_order(data, conn=None):
             sql = """
             INSERT INTO uni_order (
                 order_id, order_no, order_date, cli_id, offer_id, inquiry_mpn, inquiry_brand, 
-                price_rmb, price_kwr, price_usd, cost_price_rmb, is_finished, is_paid, paid_amount, return_status, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                price_rmb, price_kwr, price_usd, cost_price_rmb, is_finished, is_paid, paid_amount, return_status, remark, is_transferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '未转')
             """
             params = (
                 order_id, order_no, order_date, cli_id, offer_id,
@@ -255,8 +258,12 @@ def batch_convert_from_offer(offer_ids, cli_id=None):
                 }
                 
                 ok, msg = add_order(data, conn=conn)
-                if ok: success_count += 1
-                else: errors.append(msg)
+                if ok: 
+                    success_count += 1
+                    # Update source offer status
+                    conn.execute("UPDATE uni_offer SET is_transferred = '已转' WHERE offer_id = ?", (offer_data['offer_id'],))
+                else: 
+                    errors.append(msg)
             
             if success_count > 0:
                 conn.commit()
