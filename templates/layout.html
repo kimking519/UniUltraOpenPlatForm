@@ -21,16 +21,19 @@
             <a href="/buy" class="menu-item {% if active_page == 'buy' %}active{% endif %}">采购管理</a>
 
             <div class="menu-group">
-                <a href="#" class="menu-item group-title" onclick="toggleSubmenu('config-menu', event)">
+                <a href="#"
+                    class="menu-item group-title {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}active{% endif %}"
+                    onclick="toggleSubmenu('config-menu', event)">
                     <span style="flex: 1;">配置</span>
-                    <svg class="chevron-icon" style="transition: transform 0.3s;" viewBox="0 0 20 20"
-                        fill="currentColor">
+                    <svg class="chevron-icon {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}rotated{% endif %}"
+                        style="transition: transform 0.3s;" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd"
                             d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
                             clip-rule="evenodd" />
                     </svg>
                 </a>
-                <div id="config-menu" class="submenu">
+                <div id="config-menu"
+                    class="submenu {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}open{% endif %}">
                     <a href="/daily"
                         class="menu-item submenu-item {% if active_page == 'daily' %}active{% endif %}">动态参数</a>
                     <a href="/emp"
