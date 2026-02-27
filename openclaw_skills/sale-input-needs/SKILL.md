@@ -23,8 +23,8 @@ description: 自动从销售聊天、邮件或日常笔记中提取电子元组�
 
 ```bash
 # WSL 路径映射参考
-# Windows: E:\7_AI_APP\UniUltraOpenPlatForm\uni_platform.db
-# WSL:     /mnt/e/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db
+# Windows: E:\WorkPlace\7_AI_APP\UniUltraOpenPlatForm\uni_platform.db
+# WSL:     /mnt/e/WorkPlace/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db
 ```
 
 ## WSL & 环境配置
@@ -36,7 +36,7 @@ description: 自动从销售聊天、邮件或日常笔记中提取电子元组�
 ```bash
 # 在 WSL 中查询客户 ID (根据名称模糊搜索)
 python openclaw_skills/sale-input-needs/scripts/db_tool.py \
-  --db_path "/mnt/e/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db" \
+  --db_path "/mnt/e/WorkPlace/7_AI_APP/UniUltraOpenPlatForm/uni_platform.db" \
   --action find_cli --query "客户名称"
 ```
 

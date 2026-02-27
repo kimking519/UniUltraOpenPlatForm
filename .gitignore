@@ -10,3 +10,4 @@ ENV/
 *.sqlite3
 .vscode/
 .idea/
+*.csv
